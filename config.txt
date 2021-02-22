@@ -1,0 +1,19 @@
+{
+'csv':'data/',
+'model_save_file':'models/',
+'datafiles':['ESP-ENG.csv', 'ESP-EUS.csv'],
+'modelfiles':['ESEN', 'ESEU'],
+'probs':[60, 100],
+'n_runs':1,
+'hidden_type':'LSTM',
+'hidden_dims':256,
+'n_rnn_layers':1,
+'drop_p':0.4,
+'n_embedd':32,
+'n_epochs':100,
+'learning_rate':0.001,
+'batch_size':134,
+'plotting':False,
+'print_freq':10,
+'seed':404
+}
