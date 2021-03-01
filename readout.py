@@ -28,7 +28,6 @@ args = Namespace(
     n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=32,
-    hidden_type='LSTM',
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.4,
@@ -75,11 +74,10 @@ for data, category in zip(args.datafiles, args.modelfiles):
             hidd = defaultdict(list)
 
             model = torch.load(args.model_save_file +
-                               f"{args.hidden_type}/{args.hidden_dims}/{m_name}/{m_name}_{run}_threshold_val_35.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
             model.to('cpu')
             model.eval()
 
-            # Only compute training set for first model of each language
             # Otherwise takes around 5 minutes per model
             # for w, l in zip(train_df.data, train_df.label):
             #     for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):

@@ -28,14 +28,13 @@ args = Namespace(
     n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=32,
-    hidden_type='LSTM',
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.4,
     # Training hyperparameters
     n_epochs=50,
     learning_rate=0.001,
-    batch_size=128,  # Selected based on train-dev-test sizes
+    batch_size=128,  # Selected based on train-val-test sizes
     # Meta parameters
     acc_threshold=30,
     plotting=False,

@@ -36,7 +36,7 @@ args = Namespace(
     # Training hyperparameters
     n_epochs=50,
     learning_rate=0.001,
-    batch_size=128,  # Selected based on train-dev-test sizes
+    batch_size=128,  # Selected based on train-val-test sizes
     # Meta parameters
     acc_threshold=30,
     plotting=False,
