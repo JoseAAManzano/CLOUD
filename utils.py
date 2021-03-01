@@ -170,7 +170,7 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
     return running_loss, running_acc
 
 
-def get_distribution_from_context(model, context, vectorizer, softmax=True):
+def get_distribution_from_context(model, context, vectorizer, softmax=True, device='cpu'):
     f_v, _ = vectorizer.vectorize(context)
     f_v = f_v.to(device)
     out, hidden = model(f_v.unsqueeze(0), hidden)
