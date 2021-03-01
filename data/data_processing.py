@@ -18,8 +18,7 @@ random.seed(4004)
 path = os.getcwd()
 os.chdir(path)
 
-file_path = "data/RAW/"
-target_path = "data/"
+file_path = "RAW/"
 
 esp = pd.read_csv(os.path.join(file_path, 'ESP.csv'), encoding='utf-8')
 eng = pd.read_csv(os.path.join(file_path, 'ENG.csv'), sep=',',
@@ -124,7 +123,7 @@ print(stats.ttest_ind(data[(data.split=='val') & (data.label=='ESP')].len,
 print(stats.ttest_ind(data[(data.split=='test') & (data.label=='ESP')].len,
                       data[(data.split=='test') & (data.label=='ENG')].len))
 
-data.to_csv(os.path.join(target_path, 'ESP-ENG.csv'),
+data.to_csv('ESP-ENG.csv',
             index=False, encoding='utf-8')
 
 # %% Second dataset
@@ -144,5 +143,5 @@ print(stats.ttest_ind(data[(data.split=='val') & (data.label=='ESP')].len,
 print(stats.ttest_ind(data[(data.split=='test') & (data.label=='ESP')].len,
                       data[(data.split=='test') & (data.label=='EUS')].len))
 
-data.to_csv(os.path.join(target_path, 'ESP-EUS.csv'),
+data.to_csv('ESP-EUS.csv',
             index=False, encoding='utf-8')

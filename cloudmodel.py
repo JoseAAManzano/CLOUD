@@ -19,21 +19,18 @@ class CLOUD(nn.Module):
     The model uses the hidden representations to output the probability distribution of the next character.
     """
 
-    def __init__(self, char_vocab_size, n_embedd=32, n_hidden=128, n_layers=1, drop_p=0.0, hidden_type='LSTM', pad_idx=None):
+    def __init__(self, char_vocab_size, n_embedd=32, n_hidden=128, n_layers=1, drop_p=0.0, pad_idx=None):
         """
         Args:
             char_vocab_size (int): The number of characters in the vocabulary (alphabet + special characters)
             n_hidden (int): The size of the RNN's hidden representations (Default 128)
             n_layers (int): Number of RNN layers (Default 1)
             drop_p (float): Dropout between RNN layers if n_layers > 1 (Default 0.2)
-            hidden_type (str): Whether t
-            o use LSTM or GRU cells (Default 'LSTM')
             pad_idx (int): Index to ignore in Embedding layer
         """
         super(CLOUD, self).__init__()
         self.n_hidden = n_hidden
         self.n_layers = n_layers
-        self.hidden_type = hidden_type
         self.char_vocab_size = char_vocab_size
         self.pad_idx = pad_idx
 
@@ -41,24 +38,13 @@ class CLOUD(nn.Module):
                               embedding_dim=n_embedd,
                               padding_idx=pad_idx)
 
-        if hidden_type == 'LSTM':
-            self.rnn = nn.LSTM(
-                input_size=n_embedd,
-                hidden_size=n_hidden,
-                num_layers=n_layers,
-                dropout=drop_p if n_layers > 1 else 0,
-                batch_first=True
-            )
-        elif hidden_type == 'GRU':
-            self.rnn = nn.GRU(
-                input_size=n_embedd,
-                hidden_size=n_hidden,
-                num_layers=n_layers,
-                dropout=drop_p if n_layers > 1 else 0,
-                batch_first=True
-            )
-        else:
-            raise ValueError('Only "GRU" or "LSTM" accepted as hidden_type.')
+        self.rnn = nn.LSTM(
+            input_size=n_embedd,
+            hidden_size=n_hidden,
+            num_layers=n_layers,
+            dropout=drop_p if n_layers > 1 else 0,
+            batch_first=True
+        )
 
         self.fc = nn.Linear(n_hidden, char_vocab_size)
 
@@ -103,10 +89,9 @@ class CLOUD(nn.Module):
                              self.n_hidden)
         hidden = hidden.to(device)
 
-        if self.hidden_type == 'LSTM':
-            cell = torch.zeros(self.n_layers, batch_size,
-                               self.n_hidden)
-            cell = cell.to(device)
-            hidden = (hidden, cell)
+        cell = torch.zeros(self.n_layers, batch_size,
+                            self.n_hidden)
+        cell = cell.to(device)
+        hidden = (hidden, cell)
 
         return hidden

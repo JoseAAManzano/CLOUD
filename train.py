@@ -30,7 +30,6 @@ args = Namespace(
     n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=32,
-    hidden_type='LSTM',
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.4,
@@ -68,7 +67,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
             t0 = datetime.now()
 
-            save_file = args.model_save_file + f"{args.hidden_type}/{args.hidden_dims}/{m_name}"
+            save_file = args.model_save_file + f"{m_name}"
             print(f"\nSave file: {data}: {save_file}/{m_name}_{run}\n")
 
             train_state = utils.make_train_state(
