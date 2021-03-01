@@ -26,7 +26,9 @@ class CLOUD(nn.Module):
             n_hidden (int): The size of the RNN's hidden representations (Default 128)
             n_layers (int): Number of RNN layers (Default 1)
             drop_p (float): Dropout between RNN layers if n_layers > 1 (Default 0.2)
-            hidden_type (str): Whether to use LSTM or GRU cells (Default 'LSTM')
+            hidden_type (str): Whether t
+            o use LSTM or GRU cells (Default 'LSTM')
+            pad_idx (int): Index to ignore in Embedding layer
         """
         super(CLOUD, self).__init__()
         self.n_hidden = n_hidden
@@ -77,18 +79,18 @@ class CLOUD(nn.Module):
         # Hidden layer
         out, hidden = self.rnn(X, hidden)
 
-        out, _ = nn.utils.rnn.pad_packed_sequence(
+        out_rnn, _ = nn.utils.rnn.pad_packed_sequence(
             out, batch_first=True, padding_value=self.pad_idx, total_length=max_length)
 
         # Reshape output
-        batch_size, seq_size, n_hidden = out.shape
-        out = out.contiguous().view(batch_size*seq_size, n_hidden)
+        batch_size, seq_size, n_hidden = out_rnn.shape
+        out = out_rnn.contiguous().view(batch_size*seq_size, n_hidden)
 
         # Output layer
         out = self.fc(F.dropout(out, p=drop_rate))
         out.view(batch_size, seq_size, self.char_vocab_size)
 
-        return out, hidden
+        return out, out_rnn, hidden
 
     def init_hidden(self, batch_size, device='cpu'):
         """

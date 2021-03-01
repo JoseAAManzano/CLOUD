@@ -27,7 +27,7 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=5,  # How many versions of the models to train
+    n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=32,
     hidden_type='LSTM',
@@ -35,7 +35,7 @@ args = Namespace(
     n_rnn_layers=1,
     drop_p=0.4,
     # Training hyperparameters
-    n_epochs=100,
+    n_epochs=50,
     learning_rate=0.001,
     batch_size=128,  # Selected based on train-dev-test sizes
     # Meta parameters
@@ -116,7 +116,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
                     hidden = model.init_hidden(args.batch_size, args.device)
 
-                    out, hidden = model(batch_dict['X'], batch_dict['vector_length'],
+                    out, _, hidden = model(batch_dict['X'], batch_dict['vector_length'],
                                         hidden, drop_rate=args.drop_p, max_length=vectorizer.max_length)
                     
                     loss = utils.compute_loss(

@@ -153,7 +153,7 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
     for batch_id, batch_dict in enumerate(batch_generator):
         hidden = model.init_hidden(args.batch_size, args.device)
 
-        out, hidden = model(
+        out, _, hidden = model(
             batch_dict['X'], batch_dict['vector_length'], hidden, max_length=max_length)
         
         loss = compute_loss(

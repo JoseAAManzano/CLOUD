@@ -28,14 +28,15 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=5,  # How many versions of the models to train
+    n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
+    embedding_dim=32,
     hidden_type='LSTM',
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.4,
     # Training hyperparameters
-    n_epochs=100,
+    n_epochs=50,
     learning_rate=0.001,
     batch_size=128,  # Selected based on train-dev-test sizes
     # Meta parameters
@@ -67,7 +68,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
             else:
                 cat = 'ES-EU'
 
-            model_file = args.model_save_file + f"{args.hidden_type}/{args.hidden_dims}/{m_name}/{m_name}_{run}_threshold_val_34.pt"
+            model_file = args.model_save_file + f"{args.hidden_type}/{args.hidden_dims}/{m_name}/{m_name}_{run}_threshold_val_35.pt"
             print(f"\nSave file: {data}: {model_file}\n")
 
             model = torch.load(model_file)
@@ -93,30 +94,37 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     tmp['category'].append(category)
                     tmp['run'].append(run)
                     tmp['dataset'].append(dt)
-                    tmp['split'].append(split)
-                    tmp['group'].append(cat)
+                    tmp['Split'].append(split)
+                    tmp['Version'].append(cat)
                     tmp['loss'].append(eval_loss)
-                    tmp['acc'].append(eval_acc)
+                    tmp['Accuracy'].append(eval_acc)
             
 res = pd.DataFrame(tmp)
 
 mc = res
 
-langs = [x[-2:].upper() + "_" + y.split('.')[0].split('-')[1] for x,y in zip(mc['split'], mc['dataset'])]
+langs = [x[-2:].upper() + "_" + y.split('.')[0].split('-')[1] for x,y in zip(mc['Split'], mc['dataset'])]
 
 mc['lang'] = langs
-mc['split'] = mc['split'].map(lambda x: x[:-3].upper())
+mc['Set'] = mc['Split'].map(lambda x: x[:-3].upper())
 
-#mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
+mc = mc[mc.lang != 'L1_EUS']
+mc['Language'] = mc['lang'].map({'L1_ENG': 'Spanish (ES)',
+                                 'L2_ENG': 'English (EN)',
+                                 'L2_EUS': 'Basque (EU)'})
+
+mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
 
 
 #%%
-#mc = pd.read_csv('results/model_comparison.csv')
+mc = pd.read_csv('results/model_comparison.csv')
 
 import seaborn as sns
 
-sns.set(style='white', context='paper', palette='pastel', font_scale=1.5)
+sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.5)
 
 plt.figure(figsize=(6, 9))
-ax = sns.catplot(data=mc, x='split', y='acc', hue='group', hue_order=['MONO', 'ES-EN', 'ES-EU'], col='lang', kind='bar', ci=99)
+ax = sns.catplot(data=mc, x='Set', y='Accuracy', hue='Version',
+                 hue_order=['MONO', 'ES-EN', 'ES-EU'],
+                 col='Language', kind='bar', ci=99)
 plt.show()

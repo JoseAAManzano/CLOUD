@@ -58,7 +58,7 @@ rmterms <- c('ob1:Group1', 'ob1:Group2', 'ob2:Group1', 'ob2:Group2',
 plot_model(m_simul_reco, show.values=T, value.offset=.3, title="",
             rm.terms=rmterms, axis.labels=lab, transform=NULL, ci.lvl=0.99,
            dot.size=3, line.size=1.5, value.size=5, colors='bw') +
-  font_size(labels.x=15, labels.y=15, axis_title.x=15) + ylim(c(-2.5, 10))
+  font_size(labels.x=15, labels.y=15, axis_title.x=15) + ylim(c(-2.5, 12))
 
 comp2 <- data.frame(reco_simul, Pred = fitted(m_simul_reco))
 
@@ -80,11 +80,11 @@ prod_simul[,paste("ob", 1:2, sep='')] <- t[prod_simul$block, 1:2]
 prod_simul$run <- as.factor(prod_simul$run)
 
 m_simul_prod <- lmer(Score ~ (ob1 + ob2) * Group * label +
-             (1|run)+(1| run:Group:label),
+             (1|run:Group),
            data=prod_simul,
            control=lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=100000)),
            REML=F)
-m_simul_prod <- update(m_simul_prod, ~.-ob1:Group:label - ob2:Group:label)
+#m_simul_prod <- update(m_simul_prod, ~.-ob1:Group:label - ob2:Group:label)
 
 options(scipen=999)
 
