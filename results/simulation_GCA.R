@@ -36,7 +36,7 @@ t <- poly(unique(as.numeric(reco_simul$block)), 2)
 reco_simul[,paste("ob", 1:2, sep='')] <- t[reco_simul$block, 1:2]
 reco_simul$run <- as.factor(reco_simul$run)
 
-m_simul_reco <- glmer(cbind(Score, 48-Score) ~ (ob1+ob2) * Group * label+
+m_simul_reco <- glmer(cbind(Score, 48-Score) ~ (ob1+ob2) * Group * label +
                         (1|run:Group:label),
                       data=reco_simul,
                       control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=10000000)),
@@ -74,17 +74,17 @@ ggplot(comp2, aes(block, Score/48, color=Group, group=Group)) +
 
 #### PROD
 
-prod_simul <- aggregate(Score ~ run + Group + block + label, FUN=mean, data=prod)
+prod_simul <- prod[prod$trl == 2]#aggregate(Score ~ run + Group + block + label, FUN=mean, data=prod)
 t <- poly(unique(as.numeric(prod_simul$block)), 2)
 prod_simul[,paste("ob", 1:2, sep='')] <- t[prod_simul$block, 1:2]
 prod_simul$run <- as.factor(prod_simul$run)
 
 m_simul_prod <- lmer(Score ~ (ob1 + ob2) * Group * label +
-             (1|run:Group),
+             (1|run:Group:label),
            data=prod_simul,
-           control=lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=100000)),
+           control=lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1000000)),
            REML=F)
-#m_simul_prod <- update(m_simul_prod, ~.-ob1:Group:label - ob2:Group:label)
+m_simul_prod <- update(m_simul_prod, ~.-ob1:Group:label - ob2:Group:label)
 
 options(scipen=999)
 

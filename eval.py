@@ -11,6 +11,8 @@ Created on Mon Oct 19 13:48:18 2020
 import utils
 import torch
 import pandas as pd
+import torch.nn as nn
+import torch.nn.functional as F
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -40,7 +42,6 @@ args = Namespace(
     n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=32,
-    hidden_type='LSTM',
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.4,
@@ -78,7 +79,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
             else:
                 cat = 'ES-EU'
 
-            model_file = args.model_save_file + f"{args.hidden_type}/{args.hidden_dims}/{m_name}/{m_name}_{run}_threshold_val_35.pt"
+            model_file = args.model_save_file + f"{m_name}/{m_name}_{run}_threshold_val_35.pt"
             print(f"\nSave file: {data}: {model_file}\n")
 
             model = torch.load(model_file)
@@ -123,10 +124,9 @@ mc['Language'] = mc['lang'].map({'L1_ENG': 'Spanish (ES)',
                                  'L2_ENG': 'English (EN)',
                                  'L2_EUS': 'Basque (EU)'})
 
-#mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
+mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
 
 # Model comparison plot
-#mc = pd.read_csv('results/model_comparison.csv')
 plt.figure(figsize=(6, 9))
 ax = sns.catplot(data=mc, x='Set', y='Accuracy', hue='Version',
                  hue_order=['MONO', 'ES-EN', 'ES-EU'],
@@ -230,11 +230,9 @@ readout = pd.read_csv('results/backup_readout_prediction.csv', encoding='utf-8')
 readout['Version'] = readout.group
 readout['AUROC'] = readout['ROC_AUC']
 
-# readout = readout[(readout.char > 0) & (readout.char < 11)]
-
 pivot_esen = readout[readout.dataset=='ESEN'].pivot_table(index=['run', 'char'],
                               columns='Version',
-                              values='ROC_AUC').reset_index()
+                              values='AUROC').reset_index()
 for ch in range(readout.char.max() + 1):
     tmp = pivot_esen[pivot_esen.char == ch]
     _, pval = ttest_ind(tmp['ES-EN'], tmp['MONO'])
@@ -243,7 +241,7 @@ for ch in range(readout.char.max() + 1):
 
 pivot_eseu = readout[readout.dataset=='ESEU'].pivot_table(index=['run', 'char'],
                               columns='Version',
-                              values='ROC_AUC').reset_index()
+                              values='AUROC').reset_index()
 for ch in range(readout.char.max() + 1):
     tmp = pivot_eseu[pivot_eseu.char == ch]
     _, pval = ttest_ind(tmp['ES-EU'], tmp['MONO'])
@@ -260,55 +258,235 @@ g.axes.flatten()[0].fill([9.5, 10.5, 10.5, 9.5], [0.4,0.4,1,1], 'k', alpha=0.2)
 g.axes.flatten()[0].set_ylabel('AUROC', fontsize=15)
 g.axes.flatten()[1].fill([2.5, 10.5, 10.5, 2.5], [0.4,0.4,1,1], 'k', alpha=0.2)
 
-pivot = readout.pivot_table(index=['dataset', 'run', 'char'],
-                              columns='prob',
-                              values='hid_F1').reset_index()
-for dtst in ['ESEN', 'ESEU']:
-    for ch in range(11):
-        tmp = pivot[(pivot.dataset == dtst) & (pivot.char == ch)]
-        _, pval = ttest_ind(tmp['60-40'], tmp['100-00'])
-        st = '*' if pval < 0.005 else 'n.s.'
-        print(f"{dtst}-{ch}: {st}")
+# %% Model extension to predict category
 
-g = sns.catplot(x='char', y='hid_F1', hue='prob', row='dataset',
-                data=readout, kind='point', palette='Reds', ci='sd')
-g.set(ylim=(0.5, 1))
-# g.axes.flatten()[0].fill([1.5, 7.5, 7.5, 1.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-# g.axes.flatten()[0].set_ylabel('F1', fontsize=15)
-# g.axes.flatten()[1].fill([1.5, 9.1, 9.1, 1.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-# g.axes.flatten()[1].set_ylabel('F1', fontsize=15)
 
-pivot = readout.pivot_table(index=['dataset', 'run', 'char'],
-                              columns='prob',
-                              values='cel_ROC_AUC').reset_index()
-for dtst in ['ESEN', 'ESEU']:
-    for ch in range(11):
-        tmp = pivot[(pivot.dataset == dtst) & (pivot.char == ch)]
-        _, pval = ttest_ind(tmp['50-50'], tmp['100-00'])
-        st = '*' if pval < 0.005 else 'n.s.'
-        print(f"{dtst}-{ch}: {st} {pval:.3f}")
+class Ensemble(nn.Module):
+    def __init__(self, cloud, n_input, n_output):
+        super(Ensemble, self).__init__()
+        self.cloud = cloud
+        self.out = nn.Linear(n_input, n_output)
 
-g = sns.catplot(x='char', y='cel_ROC_AUC', hue='prob', row='dataset',
-                data=readout, kind='point', palette='Blues', ci='sd')
-g.axes.flatten()[0].fill([2.5, 7.5, 7.5, 2.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-g.axes.flatten()[0].set_ylabel('ROC_AUC', fontsize=15)
-g.axes.flatten()[1].fill([2.5, 9.1, 9.1, 2.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-g.axes.flatten()[1].set_ylabel('ROC_AUC', fontsize=15)
+    def forward(self, x, X_lengths, hidden, batch_size=1, drop_rate=0.0):
+        x1, out_rnn, hid = self.cloud(x, X_lengths, hidden, drop_rate)
+        inp2 = torch.flatten(out_rnn.squeeze(0)[-1])
+        x2 = self.out(F.dropout(inp2, drop_rate))
+        return x1, x2
 
-pivot = readout.pivot_table(index=['dataset', 'run', 'char'],
-                              columns='prob',
-                              values='cel_F1').reset_index()
-for dtst in ['ESEN', 'ESEU']:
-    for ch in range(11):
-        tmp = pivot[(pivot.dataset == dtst) & (pivot.char == ch)]
-        _, pval = ttest_ind(tmp['50-50'], tmp['100-00'])
-        st = '*' if pval < 0.005 else 'n.s.'
-        print(f"{dtst}-{ch}: {st}")
+class LabelPredictor(nn.Module):
+    def __init__(self, n_in, n_out):
+        super(LabelPredictor, self).__init__()
+        self.fc = nn.Linear(n_in, n_out)
+    
+    def forward(self, x):
+        return self.fc(x)
+        
 
-g = sns.catplot(x='char', y='cel_F1', hue='prob', row='dataset',
-                data=readout, kind='point', palette='Blues', ci='sd')
-g.set(ylim=(0.5, 1))
-g.axes.flatten()[0].fill([2.5, 7.5, 7.5, 2.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-g.axes.flatten()[0].set_ylabel('F1', fontsize=15)
-g.axes.flatten()[1].fill([2.5, 9.1, 9.1, 2.5], [0.5,0.5,1,1], 'k', alpha=0.2)
-g.axes.flatten()[1].set_ylabel('F1', fontsize=15)
+
+# %% Use test words to mimic learning during the blocks
+utils.set_all_seeds(args.seed, args.device)    
+    
+eval_words = pd.read_csv(args.csv + 'EXP_WORDS.csv')
+
+vectorizer = utils.Vectorizer.from_df(eval_words)
+
+mask_index = vectorizer.data_vocab.PAD_idx
+
+reps_per_block = 2
+topk = 2
+
+def score_word(prod, target):
+    score = 0
+    if prod == target:
+        score = 100
+    else:
+        for i, l in enumerate(prod):
+            if i > len(target)-1:
+                score -= 20
+            elif l == target[i]:
+                score += 20
+    return score if 0 <= score <= 100 else 0
+
+res = defaultdict(list)
+for data, category in zip(args.datafiles, args.modelfiles):
+    for prob in args.probs:
+        if category == "ESEU" and prob == args.probs[-1]:
+            continue
+        end = f"{prob:02}-{100-prob:02}"
+        m_name = f"{category}_{end}"
+
+        if prob == args.probs[0]:
+            if category == 'ESEN':
+                grp = 'ES-EN'
+            else:
+                grp = 'ES-EU'
+        else:
+            grp = 'MONO'
+        
+        for run in range(args.n_runs):
+            print(f"\n{data}: {m_name}_{run}\n")
+            exp_words = eval_words
+            exp_words = exp_words.sample(frac=1., replace=False)
+            exp_words['cat'] = range(48)
+            
+            model = torch.load(args.model_save_file +
+                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
+            model.to(args.device)
+            model.train()
+            
+            ensemble = Ensemble(model, args.hidden_dims, 48)
+            ensemble.to(args.device)
+            ensemble.train()
+            
+            # lp = LabelPredictor(args.hidden_dims, 48)                
+            # lp.to(args.device)
+            # lp.train()                
+            
+            optimizer = torch.optim.Adam(
+                    ensemble.parameters(),
+                    lr=args.learning_rate)
+            
+            # optimizer_letters = torch.optim.Adam(
+            #         model.parameters(),
+            #         lr=args.learning_rate)
+            
+            # if familiarization:
+            #     exp_words = exp_words.sample(frac=1., replace=False)
+            #     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+
+            #         target = torch.LongTensor([cat]).to(args.device)
+            #         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+            #                 optimizer.zero_grad()
+            #                 f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+            #                 hidden = ensemble.cloud.init_hidden(1, args.device)
+                            
+            #                 out_letters, out_cat = ensemble(f_v.unsqueeze(0), 
+            #                                                 torch.LongTensor([i+1]),
+            #                                                 hidden, 
+            #                                                 args.drop_p)
+                            
+            #                 loss = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
+            #                                         ignore_index=mask_index,
+            #                                         reduction='sum')
+            #                 loss += F.cross_entropy(out_cat.unsqueeze(0), target,
+            #                                         reduction='sum')
+            #                 loss.backward()
+            #                 optimizer.step()
+            
+            for it in range(5):
+                for tr in range(reps_per_block):
+                    exp_words = exp_words.sample(frac=1., replace=False)
+                    
+                    # Recognition task
+                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+                        # preds = torch.empty((6, topk))
+                        # for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+                        #     optimizer.zero_grad()
+
+                        #     f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                        #     hidden = ensemble.cloud.init_hidden(1, args.device)
+                            
+                        #     _, out_cat = ensemble(f_v.unsqueeze(0), 
+                        #                                     torch.LongTensor([i+1]),
+                        #                                     hidden)
+                        #     #out_cat = lp(torch.flatten(out_rnn.squeeze(0)[-1]))
+                        
+                        #     target = torch.LongTensor([cat]).to(args.device)
+                        
+                        #     loss = F.cross_entropy(out_cat.unsqueeze(0), target, reduction='sum')
+                            
+                        #     _, pr = torch.topk(F.log_softmax(out_cat, dim=0), k=topk)
+                            
+                        #     preds[i] = pr
+                        
+                        #     loss.backward()
+                        #     optimizer.step()
+                        
+                        # preds = list(torch.flatten(preds).numpy())
+                        # acc_cat = (int(max(set(preds), key=preds.count)) == cat) * 100
+                            
+                        optimizer.zero_grad()
+                        f_v, t_v, lengths = vectorizer.vectorize(word).values()
+                        f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                        lengths = torch.LongTensor([lengths])
+                        
+                        hidden = ensemble.cloud.init_hidden(1, args.device)
+                        
+                        _, out_cat = ensemble(f_v.unsqueeze(0),
+                                              lengths,
+                                              hidden,
+                                              args.drop_p)
+                        
+                        # out_cat = lp(torch.flatten(out_rnn.squeeze(0)[-1]))
+                        
+                        target = torch.LongTensor([cat]).to(args.device)
+                        
+                        loss = F.cross_entropy(out_cat.unsqueeze(0), target, reduction='sum')
+                        
+                        loss.backward()
+                        optimizer.step()
+                        
+                        _, preds = torch.topk(F.log_softmax(out_cat, dim=0), k = topk)
+                        acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
+                        
+                        res['dataset'].append(category)
+                        res['prob'].append(end)
+                        res['run'].append(run)
+                        res['word'].append(word)
+                        res['Group'].append(grp)
+                        res['label'].append(lab)
+                        res['block'].append(it + 1)
+                        res['trl'].append(tr+1)
+                        res['loss'].append(loss.item())
+                        res['type'].append('reco')
+                        res['acc'].append(acc_cat)
+                        res['response'].append('')
+                        
+                for tr in range(reps_per_block):
+                    exp_words = exp_words.sample(frac=1., replace=False)
+                    # Production task
+                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+                        idxs = []
+                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+                            optimizer.zero_grad()
+                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                            hidden = ensemble.cloud.init_hidden(1, args.device)
+                            
+                            out_letters, _ = ensemble(f_v.unsqueeze(0), 
+                                                        torch.LongTensor([i+1]),
+                                                        hidden)
+                            
+                            loss_letters = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
+                                                    ignore_index=mask_index,
+                                                    reduction='sum')
+                            
+                            loss_letters.backward()
+                            optimizer.step()
+                            
+                            _, idx = torch.max(F.log_softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
+                            idxs.append(idx.item())
+                        
+                        prod_word = vectorizer.decode(idxs)
+                        acc_letters = score_word(prod_word, word)
+                        
+                        res['dataset'].append(category)
+                        res['prob'].append(end)
+                        res['run'].append(run)
+                        res['word'].append(word)
+                        res['Group'].append(grp)
+                        res['label'].append(lab)
+                        res['block'].append(it + 1)
+                        res['trl'].append(tr+1)
+                        res['loss'].append(loss.item())
+                        res['type'].append('prod')
+                        res['acc'].append(acc_letters)
+                        res['response'].append(prod_word)
+
+res = pd.DataFrame(res)
+
+res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
+
+g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],
+                col='label', col_order=['ES-', 'ES+'], row='type', row_order=['reco', 'prod'],
+                data=res, kind='point', ci=99)
+g.set(ylim=(0, 100))

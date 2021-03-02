@@ -107,7 +107,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
             exp_words['cat'] = range(48)
             
             model = torch.load(args.model_save_file +
-                               f"{args.hidden_type}/{args.hidden_dims}/{m_name}/{m_name}_{run}_threshold_val_34.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
 
             ensemble = Ensemble(model, args.hidden_dims, 48)  
             ensemble.to(args.device)
@@ -193,7 +193,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         loss.backward()
                         optimizer.step()
                         
-                        _, preds = torch.topk(out_cat, k = 4)
+                        _, preds = torch.topk(out_cat, k = 6)
                         acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
                         
                         res['dataset'].append(category)
