@@ -74,7 +74,7 @@ ggplot(comp2, aes(block, Score/48, color=Group, group=Group)) +
 
 #### PROD
 
-prod_simul <- prod[prod$trl == 2]#aggregate(Score ~ run + Group + block + label, FUN=mean, data=prod)
+prod_simul <- aggregate(Score ~ run + Group + block + label, FUN=mean, data=prod)
 t <- poly(unique(as.numeric(prod_simul$block)), 2)
 prod_simul[,paste("ob", 1:2, sep='')] <- t[prod_simul$block, 1:2]
 prod_simul$run <- as.factor(prod_simul$run)

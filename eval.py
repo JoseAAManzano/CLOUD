@@ -293,7 +293,7 @@ vectorizer = utils.Vectorizer.from_df(eval_words)
 mask_index = vectorizer.data_vocab.PAD_idx
 
 reps_per_block = 2
-topk = 2
+topk = 6
 
 def score_word(prod, target):
     score = 0
@@ -331,8 +331,8 @@ for data, category in zip(args.datafiles, args.modelfiles):
             
             model = torch.load(args.model_save_file +
                                f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
-            model.to(args.device)
-            model.train()
+            # model.to(args.device)
+            # model.train()
             
             ensemble = Ensemble(model, args.hidden_dims, 48)
             ensemble.to(args.device)
@@ -346,9 +346,9 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     ensemble.parameters(),
                     lr=args.learning_rate)
             
-            # optimizer_letters = torch.optim.Adam(
-            #         model.parameters(),
-            #         lr=args.learning_rate)
+            optimizer_letters = torch.optim.Adam(
+                    ensemble.parameters(),
+                    lr=args.learning_rate)
             
             # if familiarization:
             #     exp_words = exp_words.sample(frac=1., replace=False)
@@ -417,7 +417,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                                               hidden,
                                               args.drop_p)
                         
-                        # out_cat = lp(torch.flatten(out_rnn.squeeze(0)[-1]))
+                        #out_cat = lp(torch.flatten(out_rnn.squeeze(0)[-1]))
                         
                         target = torch.LongTensor([cat]).to(args.device)
                         
@@ -442,26 +442,26 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         res['acc'].append(acc_cat)
                         res['response'].append('')
                         
-                for tr in range(reps_per_block):
                     exp_words = exp_words.sample(frac=1., replace=False)
                     # Production task
                     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
                         idxs = []
                         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            optimizer.zero_grad()
+                            optimizer_letters.zero_grad()
                             f_v, t_v = f_v.to(args.device), t_v.to(args.device)
                             hidden = ensemble.cloud.init_hidden(1, args.device)
                             
                             out_letters, _ = ensemble(f_v.unsqueeze(0), 
                                                         torch.LongTensor([i+1]),
-                                                        hidden)
+                                                        hidden,
+                                                        args.drop_p)
                             
                             loss_letters = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
                                                     ignore_index=mask_index,
                                                     reduction='sum')
                             
                             loss_letters.backward()
-                            optimizer.step()
+                            optimizer_letters.step()
                             
                             _, idx = torch.max(F.log_softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
                             idxs.append(idx.item())
