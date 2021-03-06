@@ -56,7 +56,16 @@ class Ensemble(nn.Module):
         x1, out_rnn, hid = self.cloud(x, X_lengths, hidden, drop_rate)
         inp2 = torch.flatten(out_rnn.squeeze(0)[-1])
         x2 = self.out(F.dropout(inp2, drop_rate))
-        return x1, x2
+        return x1, out_rnn, x2
+    
+class LabelPredictor(nn.Module):
+    def __init__(self, n_in, n_out):
+        super(LabelPredictor, self).__init__()
+        self.fc = nn.Linear(n_in, n_out)
+    
+    def forward(self, x):
+        return self.fc(x)
+        
 
 
 # %% Use test words to mimic learning during the blocks
@@ -70,6 +79,7 @@ mask_index = vectorizer.data_vocab.PAD_idx
 
 reps_per_block = 2
 familiarization = 0
+topk = 4
 
 def score_word(prod, target):
     score = 0
@@ -108,36 +118,59 @@ for data, category in zip(args.datafiles, args.modelfiles):
             
             model = torch.load(args.model_save_file +
                                f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
-
-            ensemble = Ensemble(model, args.hidden_dims, 48)  
-            ensemble.to(args.device)
-            ensemble.train()
+            model.to(args.device)
+            model.train()
+            
+            lp = LabelPredictor(args.hidden_dims, 48)
+            lp.to(args.device)
+            lp.train()
+            
+            # ensemble = Ensemble(model, args.hidden_dims, 48)  
+            # ensemble.to(args.device)
+            # ensemble.train()
             
             optimizer = torch.optim.Adam(
-                    ensemble.parameters(),
+                    lp.parameters(),
+                    lr=args.learning_rate)
+            
+            optimizer_letters = torch.optim.Adam(
+                    model.parameters(),
                     lr=args.learning_rate)
             
             if familiarization:
                 exp_words = exp_words.sample(frac=1., replace=False)
+                
+                # Recognition task
                 for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                    optimizer.zero_grad()
-                    loss = 0
+                    rep = torch.zeros(args.hidden_dims).to(args.device)
                     for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            optimizer.zero_grad()
-                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = ensemble.cloud.init_hidden(1, args.device)
-                            
-                            out_letters, out_cat = ensemble(f_v.unsqueeze(0), 
-                                                            torch.LongTensor([i+1]),
-                                                            hidden, 
-                                                            args.drop_p)
-                            
-                            loss += F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
-                                                    ignore_index=mask_index,
-                                                    reduction='sum')
+                        optimizer_letters.zero_grad()
+                        f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                        hidden = model.init_hidden(1, args.device)
+                        
+                        out_letters, out_rnn, _ = model(f_v.unsqueeze(0), 
+                                                        torch.LongTensor([i+1]),
+                                                        hidden, 
+                                                        args.drop_p)
+                        
+                        loss = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
+                                                ignore_index=mask_index,
+                                                reduction='sum')
+                        loss.backward()
+                        optimizer_letters.step()
+                        
+                        rep += torch.flatten(out_rnn.squeeze(0)[-1].detach())
+                        
+                    optimizer.zero_grad()
+
+                    rep /= i+1
+                    
+                    out_cat = lp(rep)
+                    
                     target = torch.LongTensor([cat]).to(args.device)
-                    loss += F.cross_entropy(out_cat.unsqueeze(0), target,
-                                           reduction='sum')
+                    
+                    loss = F.cross_entropy(out_cat.unsqueeze(0), target, reduction='sum')
+                    
                     loss.backward()
                     optimizer.step()
             
@@ -147,44 +180,24 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     
                     # Recognition task
                     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        # preds = []
-                        # for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                        #     optimizer_cat.zero_grad()
-
-                        #     f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                        #     hidden = ensemble.cloud.init_hidden(1, args.device)
-                            
-                        #     _, out_cat = ensemble(f_v.unsqueeze(0), 
-                        #                                     torch.LongTensor([i+1]),
-                        #                                     hidden, 
-                        #                                     args.drop_p)
-                            
-                        #     target = torch.LongTensor([cat]).to(args.device)
-                        
-                        #     loss = F.cross_entropy(out_cat.unsqueeze(0), target, reduction='sum')
-                            
-
-                            
-                        #     _, pr = torch.max(F.log_softmax(out_cat, dim=0), dim=0)
-                            
-                        #     preds.append(pr.item())
-                        
-                        #     loss.backward()
-                        #     optimizer_cat.step()
-                        
-                        # acc_cat = (max(set(preds), key=preds.count) == cat) * 100
-                            
                         optimizer.zero_grad()
-                        f_v, t_v, lengths = vectorizer.vectorize(word).values()
-                        f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                        lengths = torch.LongTensor([lengths])
+                        # preds = []
+                        rep = torch.zeros(args.hidden_dims).to(args.device)
+                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                            hidden = model.init_hidden(1, args.device)
+                            
+                            _, out_rnn, _ = model(f_v.unsqueeze(0), 
+                                                            torch.LongTensor([i+1]),
+                                                            hidden, 
+                                                            args.drop_p)
+                            
+                            rep += torch.flatten(out_rnn.squeeze(0)[-1])
+
                         
-                        hidden = model.init_hidden(1, args.device)
+                        rep /= i+1
                         
-                        _, out_cat = ensemble(f_v.unsqueeze(0),
-                                              lengths,
-                                              hidden,
-                                              args.drop_p)
+                        out_cat = lp(rep)
                         
                         target = torch.LongTensor([cat]).to(args.device)
                         
@@ -193,7 +206,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         loss.backward()
                         optimizer.step()
                         
-                        _, preds = torch.topk(out_cat, k = 6)
+                        _, preds = torch.topk(F.log_softmax(out_cat, dim=0), k = topk)
                         acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
                         
                         res['dataset'].append(category)
@@ -213,11 +226,11 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
                         idxs = []
                         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            optimizer.zero_grad()
+                            optimizer_letters.zero_grad()
                             f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = ensemble.cloud.init_hidden(1, args.device)
+                            hidden = model.init_hidden(1, args.device)
                             
-                            out_letters, _ = ensemble(f_v.unsqueeze(0), 
+                            out_letters, _, _ = model(f_v.unsqueeze(0), 
                                                             torch.LongTensor([i+1]),
                                                             hidden, 
                                                             args.drop_p)
@@ -227,7 +240,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                                                     reduction='sum')
                             
                             loss.backward()
-                            optimizer.step()
+                            optimizer_letters.step()
                             
                             _, idx = torch.max(F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
                             idxs.append(idx.item())
@@ -252,7 +265,6 @@ res = pd.DataFrame(res)
 
 #res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
 
-#%%
 sns.set(style='whitegrid')
 
 g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],

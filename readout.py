@@ -78,26 +78,6 @@ for data, category in zip(args.datafiles, args.modelfiles):
             model.to('cpu')
             model.eval()
 
-            # Otherwise takes around 5 minutes per model
-            # for w, l in zip(train_df.data, train_df.label):
-            #     for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
-            #         f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
-            #         hidden = model.init_hidden(1)
-            #         _, hidden, _ = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
-            #         hidd['dataset'].append(category)
-            #         hidd['prob'].append(end)
-            #         hidd['run'].append(run)
-            #         hidd['char'].append(i)
-            #         hidd['word'].append(w)
-            #         hidd['label'].append(l)
-            #         hid = torch.flatten(hidden.detach()).to('cpu').numpy()
-            #         for k, v in zip(hidd_cols, hid):
-            #             hidd[k].append(str(v))
-
-            # with open(f"hidden/train_hidden_{m_name}_{run}.json", 'w',
-            #         encoding='utf-8') as f:
-            #     json.dump(hidd, f)
-
             hidd = defaultdict(list)
             for w, l in zip(val_df.data, val_df.label):
                 for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
@@ -112,7 +92,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     hidd['label'].append(l)
                     hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
                     for k, v in zip(hidd_cols, hid):
-                        hidd[k].append(str(v))
+                        hidd[k].append(float(v))
 
             with open(f"hidden/val_hidden_{m_name}_{run}.json", 'w',
                       encoding='utf-8') as f:
@@ -132,7 +112,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     hidd['label'].append(l)
                     hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
                     for k, v in zip(hidd_cols, hid):
-                        hidd[k].append(str(v))
+                        hidd[k].append(float(v))
 
             with open(f"hidden/test_hidden_{m_name}_{run}.json", 'w',
                       encoding='utf-8') as f:
