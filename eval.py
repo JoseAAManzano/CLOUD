@@ -11,6 +11,10 @@ Created on Mon Oct 19 13:48:18 2020
 import utils
 import torch
 import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn'
+
+import numpy as np
+import json
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -23,12 +27,16 @@ sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.5)
 from argparse import Namespace
 from collections import defaultdict
 from scipy.stats import ttest_ind
+from string import ascii_lowercase
 
 # Readout prediction
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.linear_model import LogisticRegression
 from sklearn import metrics as mtr
 
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 # %% Set-up paramenters
 args = Namespace(
@@ -58,6 +66,173 @@ args = Namespace(
 )
 
 utils.set_all_seeds(args.seed, args.device)
+
+#%% PLOTS FOR FIGURE 1
+
+model_file = 'models/ESEN_60-40/ESEN_60-40_0_threshold_val_35.pt'
+dataset = pd.read_csv('data/ESP-ENG.csv')
+vectorizer = utils.Vectorizer.from_df(dataset)
+word = 'model'
+
+model = torch.load(model_file)
+model.to('cpu')
+model.eval()
+
+utils.set_all_seeds(args.seed, 'cpu')
+
+#%% Plot character probabilities
+letters = list(ascii_lowercase) + ['<s>', '</s>']
+top_k = 5
+tmp = np.zeros((top_k, len(word)+1))
+annot = [['' for _ in range(len(word)+1)] for _ in range(top_k)]
+
+for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+    f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
+
+    hidden = model.init_hidden(1)
+
+    out, out_rnn, hidden = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
+
+    dist = torch.flatten(out[-1, :].detach())
+    
+    dist = dist[:-1]
+    
+    prb = F.softmax(dist, dim=0)    
+    
+    ret = prb.numpy()
+    
+    sorted_probs = np.sort(ret)[::-1][:top_k]
+    argsort_probs = np.argsort(ret)[::-1][:top_k]
+    for j in range(top_k):
+        tmp[j, i] = sorted_probs[j]
+        annot[j][i] = f"{letters[argsort_probs[j]].upper()}\n\n{sorted_probs[j]:.2f}"
+
+plt.figure(figsize=(8,6))
+sns.heatmap(data=tmp, cmap='Blues', annot=annot, fmt='',
+            xticklabels=list(word.upper()) + ['</s>'],
+            vmin=0., vmax=0.6)
+
+#%% Plot word CLOUD
+hidd_cols = [f"hid_{i+1}" for i in range(model.rnn.hidden_size)]
+
+hidden_file = model_file.split('/')[-1].split('.')[0]
+
+try:
+    hidden_rep = pd.read_json(f"hidden/hidden_repr_{hidden_file}.json",
+                   encoding='utf-8')
+    print("File found. Loading representatitons from file.")
+except:
+    print("File not found. Creating hidden representation file. This will take a while.")
+    hidd = defaultdict(list)
+    for w, l in zip(dataset.data, dataset.label):
+        for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
+            f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
+            hidden = model.init_hidden(1)
+            _, out_rnn, _ = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
+            hidd['Word'].append(w)
+            hidd['Char'].append(i)
+            hidd['Language'].append(l)
+            hidd['Length'].append(len(w))
+            hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
+            for k, v in zip(hidd_cols, hid):
+                hidd[k].append(float(v))
+    print('Generating backup file for future use.')
+    with open(f"hidden/hidden_repr_{hidden_file}.json", 'w',
+          encoding='utf-8') as f:
+        json.dump(hidd, f)
+    hidden_rep = pd.DataFrame(hidd)
+    del hidd
+
+# Add the representation of the word if it's not in the dataset
+if word not in list(dataset.data):
+    added = defaultdict(list)
+    for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
+        f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
+        hidden = model.init_hidden(1)
+        _, out_rnn, _ = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
+        added['Word'].append(w)
+        added['Char'].append(i)
+        added['Language'].append("ENG")
+        added['Length'].append(len(w))
+        hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
+        for k, v in zip(hidd_cols, hid):
+            added[k].append(float(v))
+            
+    hidden_rep = pd.concat([hidden_rep, pd.DataFrame(added)], axis=0)
+    del added
+
+# Sum representations by word and language
+tmp = hidden_rep.drop(['Char'], axis=1)
+df = pd.pivot_table(tmp, index=['Word','Length', 'Language'], values=hidd_cols,
+                    aggfunc=np.mean).reset_index()
+df['Language'] = df.Language.apply(lambda x: x[:-1])
+
+df[hidd_cols] = StandardScaler().fit_transform(df[hidd_cols].values)
+
+# Compress hidden representations for plotting using PCA and TSNE
+print('Reducing the dimensionality for plotting. This will take a while.')
+pca = PCA(n_components=50)
+
+pca_res = pca.fit_transform(df[hidd_cols])
+
+tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1, random_state=args.seed)
+
+df[['dim1', 'dim2']] = tsne.fit_transform(pca_res)
+
+del pca_res, tmp
+
+# Plot the entire dataset
+ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
+                   hue='Language', hue_order=['ES', 'EN'],
+                   data=df, alpha=0.8, space=0.1,
+                   xlim=(-70, 70), ylim=(-70, 70), s=2)
+plt.show()
+
+def print_from(df, d1_l, d1_h, d2_l, d2_h):
+    return sorted(list(df[(df['dim1'] >= d1_l) & (df['dim1'] <= d1_h) &
+                   (df['dim2'] >= d2_l) & (df['dim2'] <= d2_h)].Word))
+
+list1 = [x for x in print_from(df, 20, 40, 40, 60) if len(x) < 6]
+list2 = [x for x in print_from(df, 20, 40, 0, 20) if len(x) < 6]
+
+# Compute the distance from all words to the selected word
+print("Computing distances")
+word_rep = df[df.Word == word][hidd_cols].values[0]
+
+dists = []
+for i, row in df.iterrows():
+    if (i+1) % 1000 == 0: print("{i+1} words processed.")
+    dists.append(1 - word_rep.dot(row[hidd_cols].values) / 
+                 (np.linalg.norm(word_rep) * np.linalg.norm(row[hidd_cols].values))
+        )
+
+df['dist'] = dists
+
+# Get most similar and dissimilar words
+top = df.sort_values(by='dist', ascending=True)[:21]
+
+def jitter(df, col):
+    return df[col] + np.random.randn(len(df)) * (0.5 * (max(df[col]) - min(df[col])))
+
+top['dim2_j'] = jitter(top, 'dim2')
+top['dim1_j'] = jitter(top, 'dim1')
+
+def label_points(x, y, val, ax):
+    a = pd.concat({'x':x, 'y':y, 'val':val}, axis=1)
+    for i, point in a.iterrows():
+        if str(point['val']) == word:
+            ax.text(point['x']-.02, point['y']+.02, str(point['val']), bbox=dict(ec='red', fc='w', alpha=0.7), fontsize=25)
+        else:
+            ax.text(point['x']-.02, point['y']+.02, str(point['val']), fontsize=20)
+
+plt.figure(figsize=(7, 5))
+ax = sns.scatterplot(x='dim1_j', y='dim2_j', hue=top.Language.tolist(), data=top,
+                     hue_order=['ES', 'EN'], s=35)
+sns.despine()
+label_points(top['dim1_j'], top['dim2_j'], top.Word, ax)
+ax.legend(loc='lower left')
+plt.show()
+
 
 #%% Model comparison
 tmp = defaultdict(list)
@@ -133,6 +308,124 @@ ax = sns.catplot(data=mc, x='Set', y='Accuracy', hue='Version',
                  col='Language', kind='bar', ci=99)
 plt.show()
 
+# %% Proximity of representation for each language
+hidd_cols = [f"hid_{str(i+1)}" for i in range(args.hidden_dims)]
+
+similarities = defaultdict(list)
+for data, category in zip(args.datafiles, args.modelfiles):
+    for prob in args.probs:
+        end = f"{prob:02}-{100-prob:02}"
+        m_name = f"{category}_{end}"
+        print(m_name)
+        
+        val_dataset = pd.DataFrame()
+        for run in range(args.n_runs):
+            hdn = pd.read_json(f"hidden/val_hidden_{m_name}_{run}.json",encoding='utf-8')
+            val_dataset = pd.concat([val_dataset, hdn], axis=0, ignore_index=True)
+            
+            hdn = pd.read_json(f"hidden/test_hidden_{m_name}_{run}.json",encoding='utf-8')
+            val_dataset = pd.concat([val_dataset, hdn], axis=0, ignore_index=True)
+        del hdn
+    
+        val_dataset = val_dataset.drop('char', axis=1)
+        val_dataset.loc[:, 'len'] = val_dataset.word.map(len)
+        
+        df = pd.pivot_table(val_dataset, index=['word','len','label', 'run'], values=hidd_cols,
+                            aggfunc=np.mean).reset_index()
+        df.loc[:, 'Language'] = df.label.apply(lambda x: x[:-1])
+        df = df.sort_values(by=['Language','len'])
+        
+        for run in range(args.n_runs):
+            langs = list(df.Language.unique())
+            for ln in langs:
+                tmp = df[(df.run==run) & (df.Language == ln)]
+                D = cosine_similarity(tmp[hidd_cols].values, tmp[hidd_cols].values)
+                
+                similarities['dataset'].append(category)
+                similarities['prob'].append(end)
+                grp = ''
+                if category == 'ESEN':
+                    if end == '60-40':
+                        grp = 'ES-EN'
+                    else:
+                        grp = 'MONO'
+                else:
+                    if end == '60-40':
+                        grp = 'ES-EU'
+                    else:
+                        grp = 'MONO'
+                similarities['Version'].append(grp)
+                similarities['run'].append(run)
+                l = 'L1' if ln == 'ES' else 'L2'
+                similarities['Language'].append(l)
+                similarities['Type'].append('Within')
+                similarities['avg_dist'].append(np.triu(D, 1).mean())
+            
+            tmp = df[df.run==run]
+            tmp1 = tmp[tmp.Language == langs[0]]
+            tmp2 = tmp[tmp.Language == langs[1]]
+            D = cosine_similarity(tmp1[hidd_cols].values, tmp2[hidd_cols].values)
+            similarities['dataset'].append(category)
+            similarities['prob'].append(end)
+            grp = ''
+            if category == 'ESEN':
+                if end == '60-40':
+                    grp = 'ES-EN'
+                else:
+                    grp = 'MONO'
+            else:
+                if end == '60-40':
+                    grp = 'ES-EU'
+                else:
+                    grp = 'MONO'
+            similarities['Version'].append(grp)
+            similarities['run'].append(run)
+            similarities['Language'].append('L2')
+            similarities['Type'].append('Across')
+            similarities['avg_dist'].append(np.triu(D, 1).mean())
+            
+            if run ==0:             
+                print('Reducing the dimensionality for plotting. This will take a while.')
+                tmp[hidd_cols] = StandardScaler().fit_transform(tmp[hidd_cols])
+                
+                pca = PCA(n_components=50)
+                
+                pca_res = pca.fit_transform(tmp[hidd_cols])
+                
+                tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1, 
+                            random_state=args.seed)
+                
+                tmp.loc[:, ['dim1', 'dim2']] = tsne.fit_transform(pca_res)
+                
+                if category == 'ESEN':
+                    palette = ['C1', 'C0']
+                    hue_order = ['ES', 'EN']
+                else:
+                    palette = ['C1', 'C2']
+                    hue_order = ['ES', 'EU']
+                
+                ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
+                   hue='Language', hue_order=hue_order, palette=palette,
+                   data=tmp, alpha=0.8, space=0.1,
+                   xlim=(-70, 70), ylim=(-70, 70), s=5)
+                plt.show()
+                
+similarities = pd.DataFrame(similarities)
+similarities.loc[:, 'Contrast'] = similarities[['Language', 'Type']].agg('_'.join, axis=1)
+similarities.loc[:, 'Model'] = similarities[['dataset', 'prob']].agg('_'.join, axis=1)
+
+similarities['Contrast'] = similarities.Contrast.map({'L1_Within':'Within L1',
+                                              'L2_Within':'Within L2',
+                                              'L2_Across':'Across\nLanguages'})
+
+sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.8)
+g = sns.catplot(x='Contrast', y='avg_dist', order=['Within L1', 'Within L2', 'Across\nLanguages'],
+                col='Model', palette='Greys', label='big',
+                data=similarities, kind='bar', ci=99)
+g.axes.flatten()[0].set_ylabel('Avg. Cosine Similarity \u00B1 99% CI', fontsize=18)
+plt.show()
+
+similarities.to_csv('results/backup_similarities.csv', index=False, encoding='utf-8')
 
 # %% Hidden representation for each time-point for each word
 # First is necessary to run the readout.py file to produce the representations
@@ -226,6 +519,8 @@ res = pd.DataFrame(res)
 res.to_csv('results/backup_readout_prediction.csv', index=False, encoding='utf-8')       
 
 # %% Plots
+sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.5)
+
 readout = pd.read_csv('results/backup_readout_prediction.csv', encoding='utf-8')
 readout['Version'] = readout.group
 readout['AUROC'] = readout['ROC_AUC']

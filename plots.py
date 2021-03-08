@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import json
 
 import seaborn as sns
-sns.set(style='white', context='paper', palette='pastel', font_scale=1.5)
+sns.set(style='white', context='paper', palette='pastel', font_scale=2.)
 import matplotlib.pyplot as plt
 
 from string import ascii_lowercase
@@ -15,7 +15,6 @@ from collections import defaultdict
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
-from scipy.spatial.distance import pdist
 
 #%% Parameter variables
 
@@ -136,8 +135,7 @@ df = pd.pivot_table(tmp, index=['Word','Length', 'Language'], values=hidd_cols,
                     aggfunc=np.mean).reset_index()
 df['Language'] = df.Language.apply(lambda x: x[:-1])
 
-sc = StandardScaler()
-df[hidd_cols] = sc.fit_transform(df[hidd_cols].values)
+df[hidd_cols] = StandardScaler().fit_transform(df[hidd_cols].values)
 
 # least = hidden_rep[hidden_rep.Length < len(word)] # Take words that are smaller
 # least = least[least.Char == least.Length] # Select the last representation
@@ -152,7 +150,7 @@ pca = PCA(n_components=50)
 
 pca_res = pca.fit_transform(df[hidd_cols])
 
-tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1)
+tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1, random_state=404)
 
 df[['dim1', 'dim2']] = tsne.fit_transform(pca_res)
 
