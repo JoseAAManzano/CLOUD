@@ -54,7 +54,7 @@ except:
 
 # %% Hidden representation for each time-point for each word
 hidd_cols = [f"hid_{str(i+1)}" for i in range(args.hidden_dims)]
-    
+
 for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
         end = f"{prob:02}-{100-prob:02}"
@@ -83,34 +83,38 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
                     f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
                     hidden = model.init_hidden(1)
-                    _, out_rnn, hidden = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
+                    _, out_rnn, hidden = model(f_v.unsqueeze(
+                        0), torch.LongTensor([i+1]), hidden, max_length=i+1)
                     hidd['dataset'].append(category)
                     hidd['prob'].append(end)
                     hidd['run'].append(run)
                     hidd['char'].append(i)
                     hidd['word'].append(w)
                     hidd['label'].append(l)
-                    hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
+                    hid = torch.flatten(out_rnn.squeeze(
+                        0)[-1].detach()).to('cpu').numpy()
                     for k, v in zip(hidd_cols, hid):
                         hidd[k].append(float(v))
 
             with open(f"hidden/val_hidden_{m_name}_{run}.json", 'w',
                       encoding='utf-8') as f:
                 json.dump(hidd, f)
-            
+
             hidd = defaultdict(list)
             for w, l in zip(test_df.data, test_df.label):
                 for i, (f_v, t_v) in vectorizer.vectorize_single_char(w):
                     f_v, t_v = f_v.to('cpu'), t_v.to('cpu')
                     hidden = model.init_hidden(1)
-                    _, out_rnn, hidden = model(f_v.unsqueeze(0), torch.LongTensor([i+1]), hidden, max_length=i+1)
+                    _, out_rnn, hidden = model(f_v.unsqueeze(
+                        0), torch.LongTensor([i+1]), hidden, max_length=i+1)
                     hidd['dataset'].append(category)
                     hidd['prob'].append(end)
                     hidd['run'].append(run)
                     hidd['char'].append(i)
                     hidd['word'].append(w)
                     hidd['label'].append(l)
-                    hid = torch.flatten(out_rnn.squeeze(0)[-1].detach()).to('cpu').numpy()
+                    hid = torch.flatten(out_rnn.squeeze(
+                        0)[-1].detach()).to('cpu').numpy()
                     for k, v in zip(hidd_cols, hid):
                         hidd[k].append(float(v))
 

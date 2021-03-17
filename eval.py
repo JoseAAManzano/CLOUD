@@ -15,13 +15,12 @@ pd.options.mode.chained_assignment = None  # default='warn'
 
 import numpy as np
 import json
-import torch.nn as nn
 import torch.nn.functional as F
 
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.5)
+sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=1.5)
 
 # Misc
 from argparse import Namespace
@@ -47,7 +46,7 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=10,  # How many versions of the models to train
+    n_runs=10,
     # Model hyperparameters
     embedding_dim=32,
     hidden_dims=128,
@@ -56,7 +55,7 @@ args = Namespace(
     # Training hyperparameters
     n_epochs=50,
     learning_rate=0.001,
-    batch_size=128,  # Selected based on train-dev-test sizes
+    batch_size=128,
     # Meta parameters
     acc_threshold=30,
     plotting=False,
@@ -66,6 +65,13 @@ args = Namespace(
 )
 
 utils.set_all_seeds(args.seed, args.device)
+
+#%% Util functions
+
+def print_from(df, col, d1_l, d1_h, d2_l, d2_h):
+    return df[(df['dim1'] >= d1_l) & (df['dim1'] <= d1_h) &
+                   (df['dim2'] >= d2_l) & (df['dim2'] <= d2_h)][col]
+
 
 #%% PLOTS FOR FIGURE 1
 
@@ -183,33 +189,29 @@ del pca_res, tmp
 
 # Plot the entire dataset
 ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
-                   hue='Language', hue_order=['ES', 'EN'],
+                   hue='Language', hue_order=['ES', 'EN'], palette=['C1', 'C0'],
                    data=df, alpha=0.8, space=0.1,
                    xlim=(-70, 70), ylim=(-70, 70), s=2)
 plt.show()
 
-def print_from(df, d1_l, d1_h, d2_l, d2_h):
-    return sorted(list(df[(df['dim1'] >= d1_l) & (df['dim1'] <= d1_h) &
-                   (df['dim2'] >= d2_l) & (df['dim2'] <= d2_h)].Word))
-
-list1 = [x for x in print_from(df, 20, 40, 40, 60) if len(x) < 6]
-list2 = [x for x in print_from(df, 20, 40, 0, 20) if len(x) < 6]
+list1 = [x for x in list(print_from(df, 'Word', 0, 20, 40, 60)) if len(x) < 6]
+list2 = [x for x in list(print_from(df, 'Word', -60, -45, -20, 15)) if len(x) < 7]
 
 # Compute the distance from all words to the selected word
-print("Computing distances")
+print("Computing similarity")
 word_rep = df[df.Word == word][hidd_cols].values[0]
 
 dists = []
 for i, row in df.iterrows():
-    if (i+1) % 1000 == 0: print("{i+1} words processed.")
-    dists.append(1 - word_rep.dot(row[hidd_cols].values) / 
+    if (i+1) % 1000 == 0: print(f"{i+1} words processed.")
+    dists.append(word_rep.dot(row[hidd_cols].values) / 
                  (np.linalg.norm(word_rep) * np.linalg.norm(row[hidd_cols].values))
         )
 
 df['dist'] = dists
 
 # Get most similar and dissimilar words
-top = df.sort_values(by='dist', ascending=True)[:21]
+top = df.sort_values(by='dist', ascending=False)[:21]
 
 def jitter(df, col):
     return df[col] + np.random.randn(len(df)) * (0.5 * (max(df[col]) - min(df[col])))
@@ -225,8 +227,10 @@ def label_points(x, y, val, ax):
         else:
             ax.text(point['x']-.02, point['y']+.02, str(point['val']), fontsize=20)
 
+sns.set(style='white', context='paper', palette='colorblind', font_scale=1.5)
+
 plt.figure(figsize=(7, 5))
-ax = sns.scatterplot(x='dim1_j', y='dim2_j', hue=top.Language.tolist(), data=top,
+ax = sns.scatterplot(x='dim1_j', y='dim2_j', hue=top.Language.tolist(), palette=['C1', 'C0'], data=top,
                      hue_order=['ES', 'EN'], s=35)
 sns.despine()
 label_points(top['dim1_j'], top['dim2_j'], top.Word, ax)
@@ -234,7 +238,9 @@ ax.legend(loc='lower left')
 plt.show()
 
 
-#%% Model comparison
+#%% PLOTS FOR FIGURE 2 (DEPRECATED)
+
+# Model comparison
 tmp = defaultdict(list)
 splits = ['val_l1', 'val_l2', 'test_l1', 'test_l2']
 for data, category in zip(args.datafiles, args.modelfiles):
@@ -299,135 +305,22 @@ mc['Language'] = mc['lang'].map({'L1_ENG': 'Spanish (ES)',
                                  'L2_ENG': 'English (EN)',
                                  'L2_EUS': 'Basque (EU)'})
 
-mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
+#mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
 
 # Model comparison plot
+mc = pd.read_csv('results/model_comparison.csv')
+
 plt.figure(figsize=(6, 9))
 ax = sns.catplot(data=mc, x='Set', y='Accuracy', hue='Version',
                  hue_order=['MONO', 'ES-EN', 'ES-EU'],
                  col='Language', kind='bar', ci=99)
 plt.show()
 
-# %% Proximity of representation for each language
-hidd_cols = [f"hid_{str(i+1)}" for i in range(args.hidden_dims)]
 
-similarities = defaultdict(list)
-for data, category in zip(args.datafiles, args.modelfiles):
-    for prob in args.probs:
-        end = f"{prob:02}-{100-prob:02}"
-        m_name = f"{category}_{end}"
-        print(m_name)
-        
-        val_dataset = pd.DataFrame()
-        for run in range(args.n_runs):
-            hdn = pd.read_json(f"hidden/val_hidden_{m_name}_{run}.json",encoding='utf-8')
-            val_dataset = pd.concat([val_dataset, hdn], axis=0, ignore_index=True)
-            
-            hdn = pd.read_json(f"hidden/test_hidden_{m_name}_{run}.json",encoding='utf-8')
-            val_dataset = pd.concat([val_dataset, hdn], axis=0, ignore_index=True)
-        del hdn
-    
-        val_dataset = val_dataset.drop('char', axis=1)
-        val_dataset.loc[:, 'len'] = val_dataset.word.map(len)
-        
-        df = pd.pivot_table(val_dataset, index=['word','len','label', 'run'], values=hidd_cols,
-                            aggfunc=np.mean).reset_index()
-        df.loc[:, 'Language'] = df.label.apply(lambda x: x[:-1])
-        df = df.sort_values(by=['Language','len'])
-        
-        for run in range(args.n_runs):
-            langs = list(df.Language.unique())
-            for ln in langs:
-                tmp = df[(df.run==run) & (df.Language == ln)]
-                D = cosine_similarity(tmp[hidd_cols].values, tmp[hidd_cols].values)
-                
-                similarities['dataset'].append(category)
-                similarities['prob'].append(end)
-                grp = ''
-                if category == 'ESEN':
-                    if end == '60-40':
-                        grp = 'ES-EN'
-                    else:
-                        grp = 'MONO'
-                else:
-                    if end == '60-40':
-                        grp = 'ES-EU'
-                    else:
-                        grp = 'MONO'
-                similarities['Version'].append(grp)
-                similarities['run'].append(run)
-                l = 'L1' if ln == 'ES' else 'L2'
-                similarities['Language'].append(l)
-                similarities['Type'].append('Within')
-                similarities['avg_dist'].append(np.triu(D, 1).mean())
-            
-            tmp = df[df.run==run]
-            tmp1 = tmp[tmp.Language == langs[0]]
-            tmp2 = tmp[tmp.Language == langs[1]]
-            D = cosine_similarity(tmp1[hidd_cols].values, tmp2[hidd_cols].values)
-            similarities['dataset'].append(category)
-            similarities['prob'].append(end)
-            grp = ''
-            if category == 'ESEN':
-                if end == '60-40':
-                    grp = 'ES-EN'
-                else:
-                    grp = 'MONO'
-            else:
-                if end == '60-40':
-                    grp = 'ES-EU'
-                else:
-                    grp = 'MONO'
-            similarities['Version'].append(grp)
-            similarities['run'].append(run)
-            similarities['Language'].append('L2')
-            similarities['Type'].append('Across')
-            similarities['avg_dist'].append(np.triu(D, 1).mean())
-            
-            if run ==0:             
-                print('Reducing the dimensionality for plotting. This will take a while.')
-                tmp[hidd_cols] = StandardScaler().fit_transform(tmp[hidd_cols])
-                
-                pca = PCA(n_components=50)
-                
-                pca_res = pca.fit_transform(tmp[hidd_cols])
-                
-                tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1, 
-                            random_state=args.seed)
-                
-                tmp.loc[:, ['dim1', 'dim2']] = tsne.fit_transform(pca_res)
-                
-                if category == 'ESEN':
-                    palette = ['C1', 'C0']
-                    hue_order = ['ES', 'EN']
-                else:
-                    palette = ['C1', 'C2']
-                    hue_order = ['ES', 'EU']
-                
-                ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
-                   hue='Language', hue_order=hue_order, palette=palette,
-                   data=tmp, alpha=0.8, space=0.1,
-                   xlim=(-70, 70), ylim=(-70, 70), s=5)
-                plt.show()
-                
-similarities = pd.DataFrame(similarities)
-similarities.loc[:, 'Contrast'] = similarities[['Language', 'Type']].agg('_'.join, axis=1)
-similarities.loc[:, 'Model'] = similarities[['dataset', 'prob']].agg('_'.join, axis=1)
 
-similarities['Contrast'] = similarities.Contrast.map({'L1_Within':'Within L1',
-                                              'L2_Within':'Within L2',
-                                              'L2_Across':'Across\nLanguages'})
+#%% PLOTS FOR NEW FIGURE 2
 
-sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.8)
-g = sns.catplot(x='Contrast', y='avg_dist', order=['Within L1', 'Within L2', 'Across\nLanguages'],
-                col='Model', palette='Greys', label='big',
-                data=similarities, kind='bar', ci=99)
-g.axes.flatten()[0].set_ylabel('Avg. Cosine Similarity \u00B1 99% CI', fontsize=18)
-plt.show()
-
-similarities.to_csv('results/backup_similarities.csv', index=False, encoding='utf-8')
-
-# %% Hidden representation for each time-point for each word
+# Hidden representation for each time-point for each word
 # First is necessary to run the readout.py file to produce the representations
 hidd_cols = [f"hid_{str(i+1)}" for i in range(args.hidden_dims)]
 
@@ -516,11 +409,9 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 
 res = pd.DataFrame(res)
 
-res.to_csv('results/backup_readout_prediction.csv', index=False, encoding='utf-8')       
+#res.to_csv('results/backup_readout_prediction.csv', index=False, encoding='utf-8')       
 
-# %% Plots
-sns.set(style='whitegrid', context='paper', palette='pastel', font_scale=1.5)
-
+# Plots
 readout = pd.read_csv('results/backup_readout_prediction.csv', encoding='utf-8')
 readout['Version'] = readout.group
 readout['AUROC'] = readout['ROC_AUC']
@@ -543,189 +434,18 @@ for ch in range(readout.char.max() + 1):
     st = '*' if pval < 0.05/11 else 'n.s.'
     print(f"ES-EU-{ch}: {st}")
 
+sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=2)
 
 g = sns.catplot(x='char', y='AUROC', hue='Version', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                col='dataset',
+                col='dataset', palette=['C1', 'C0', 'C2'],
                 data=readout, kind='point', ci=99)
 g.set(ylim=(0.49, 1.))
 g.axes.flatten()[0].fill([2.5, 8.5, 8.5, 2.5], [0.4,0.4,1,1], 'k', alpha=0.2)
 g.axes.flatten()[0].fill([9.5, 10.5, 10.5, 9.5], [0.4,0.4,1,1], 'k', alpha=0.2)
-g.axes.flatten()[0].set_ylabel('AUROC', fontsize=15)
+g.axes.flatten()[0].set_ylabel('AUROC \u00B1 99% CI')
 g.axes.flatten()[1].fill([2.5, 10.5, 10.5, 2.5], [0.4,0.4,1,1], 'k', alpha=0.2)
+g.axes.flatten()[0].set_title('Spanish-English')
+g.axes.flatten()[1].set_title('Spanish-Basque')
+g.axes.flatten()[0].set_xlabel('Character (time-step)')
+g.axes.flatten()[1].set_xlabel('Character (time-step)')
 
-# %% Model extension to predict category
-
-class LabelPredictor(nn.Module):
-    def __init__(self, n_in, n_out):
-        super(LabelPredictor, self).__init__()
-        self.fc = nn.Linear(n_in, n_out)
-    
-    def forward(self, x):
-        return self.fc(x)
-        
-
-
-# %% Use test words to mimic learning during the blocks
-utils.set_all_seeds(args.seed, args.device)    
-    
-eval_words = pd.read_csv(args.csv + 'EXP_WORDS.csv')
-
-vectorizer = utils.Vectorizer.from_df(eval_words)
-
-mask_index = vectorizer.data_vocab.PAD_idx
-
-reps_per_block = 2
-topk = 4
-
-def score_word(prod, target):
-    score = 0
-    if prod == target:
-        score = 100
-    else:
-        for i, l in enumerate(prod):
-            if i > len(target)-1:
-                score -= 20
-            elif l == target[i]:
-                score += 20
-    return score if 0 <= score <= 100 else 0
-
-res = defaultdict(list)
-for data, category in zip(args.datafiles, args.modelfiles):
-    for prob in args.probs:
-        if category == "ESEU" and prob == args.probs[-1]:
-            continue
-        end = f"{prob:02}-{100-prob:02}"
-        m_name = f"{category}_{end}"
-
-        if prob == args.probs[0]:
-            if category == 'ESEN':
-                grp = 'ES-EN'
-            else:
-                grp = 'ES-EU'
-        else:
-            grp = 'MONO'
-
-        for run in range(args.n_runs):
-            print(f"\n{data}: {m_name}_{run}\n")
-            
-            exp_words = eval_words
-            exp_words = exp_words.sample(frac=1., replace=False)
-            exp_words['cat'] = range(48)
-            
-            model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
-            model.to(args.device)
-            model.train()
-            
-            lp = LabelPredictor(args.hidden_dims, 48)
-            lp.to(args.device)
-            lp.train()
-            
-            # ensemble = Ensemble(model, args.hidden_dims, 48)  
-            # ensemble.to(args.device)
-            # ensemble.train()
-            
-            optimizer = torch.optim.Adam(
-                    lp.parameters(),
-                    lr=args.learning_rate)
-            
-            optimizer_letters = torch.optim.Adam(
-                    model.parameters(),
-                    lr=args.learning_rate)
-                        
-            for it in range(5):
-                for tr in range(reps_per_block):
-                    
-                    # Recognition task
-                    exp_words = exp_words.sample(frac=1., replace=False)
-                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        optimizer.zero_grad()
-                        # preds = []
-                        rep = torch.zeros(args.hidden_dims).to(args.device)
-                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = model.init_hidden(1, args.device)
-                            
-                            _, out_rnn, _ = model(f_v.unsqueeze(0), 
-                                                            torch.LongTensor([i+1]),
-                                                            hidden, 
-                                                            args.drop_p)
-                            
-                            rep += torch.flatten(out_rnn.squeeze(0)[-1])
-
-                        rep /= i+1
-                        
-                        out_cat = lp(rep)
-                        
-                        target = torch.LongTensor([cat]).to(args.device)
-                        
-                        loss = F.cross_entropy(out_cat.unsqueeze(0), target, reduction='sum')
-                        
-                        loss.backward()
-                        optimizer.step()
-                        
-                        _, preds = torch.topk(F.log_softmax(out_cat, dim=0), k = topk)
-                        acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
-                        
-                        res['dataset'].append(category)
-                        res['prob'].append(end)
-                        res['run'].append(run)
-                        res['word'].append(word)
-                        res['Group'].append(grp)
-                        res['label'].append(lab)
-                        res['block'].append(it + 1)
-                        res['trl'].append(tr+1)
-                        res['loss'].append(loss.item())
-                        res['type'].append('reco')
-                        res['acc'].append(acc_cat)
-                        res['response'].append('')
-                    
-                    # Production task
-                    exp_words = exp_words.sample(frac=1., replace=False)
-                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        idxs = []
-                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            optimizer_letters.zero_grad()
-                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = model.init_hidden(1, args.device)
-                            
-                            out_letters, _, _ = model(f_v.unsqueeze(0), 
-                                                            torch.LongTensor([i+1]),
-                                                            hidden, 
-                                                            args.drop_p)
-                            
-                            loss = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
-                                                    ignore_index=mask_index,
-                                                    reduction='sum')
-                            
-                            loss.backward()
-                            optimizer_letters.step()
-                            
-                            _, idx = torch.max(F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
-                            idxs.append(idx.item())
-                        
-                        prod_word = vectorizer.decode(idxs)
-                        acc_letters = score_word(prod_word, word)
-                        
-                        res['dataset'].append(category)
-                        res['prob'].append(end)
-                        res['run'].append(run)
-                        res['word'].append(word)
-                        res['Group'].append(grp)
-                        res['label'].append(lab)
-                        res['block'].append(it + 1)
-                        res['trl'].append(tr+1)
-                        res['loss'].append(loss.item())
-                        res['type'].append('prod')
-                        res['acc'].append(acc_letters)
-                        res['response'].append(prod_word)
-
-
-res = pd.DataFrame(res)
-
-res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
-
-g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                col='label', col_order=['ES-', 'ES+'], row='type', row_order=['reco', 'prod'],
-                data=res, kind='point', ci=99)
-g.set(ylim=(0, 100))

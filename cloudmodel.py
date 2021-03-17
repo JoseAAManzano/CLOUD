@@ -90,7 +90,7 @@ class CLOUD(nn.Module):
         hidden = hidden.to(device)
 
         cell = torch.zeros(self.n_layers, batch_size,
-                            self.n_hidden)
+                           self.n_hidden)
         cell = cell.to(device)
         hidden = (hidden, cell)
 

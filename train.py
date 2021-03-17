@@ -62,7 +62,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         for run in range(args.n_runs):
             threshold = args.acc_threshold
             threshold_val = args.acc_threshold
-            
+
             m_name = f"{category}_{end}"
 
             t0 = datetime.now()
@@ -90,8 +90,8 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
             # Set-up dataset, vectorizer, and model
             dataset = utils.TextDataset.make_text_dataset(df, vectorizer,
-                                                            p=prob/100,
-                                                            labels=labels)
+                                                          p=prob/100,
+                                                          labels=labels)
             # Training loop
             for it in range(args.n_epochs):
                 if (it+1) % args.print_freq == 0:
@@ -116,8 +116,8 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     hidden = model.init_hidden(args.batch_size, args.device)
 
                     out, _, hidden = model(batch_dict['X'], batch_dict['vector_length'],
-                                        hidden, drop_rate=args.drop_p, max_length=vectorizer.max_length)
-                    
+                                           hidden, drop_rate=args.drop_p, max_length=vectorizer.max_length)
+
                     loss = utils.compute_loss(
                         out, batch_dict['Y'], mask_index)
 
@@ -169,14 +169,16 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         model, f"{save_file}/{m_name}_{run}_best_acc.pt")
                     train_state['best_joint_acc'] = joint_acc
                     train_state['best_epoch_idx_acc'] = train_state['epoch_idx']
-                
+
                 if train_state['train_acc'][-1] >= threshold:
-                    print(f"Train threshold {threshold} reached at epoch {it+1}: {train_state['train_acc'][-1]:.2f}")
+                    print(
+                        f"Train threshold {threshold} reached at epoch {it+1}: {train_state['train_acc'][-1]:.2f}")
                     torch.save(
                         model, f"{save_file}/{m_name}_{run}_threshold_train_{threshold}.pt")
                     threshold += 1
                 if train_state['val_acc_l1'][-1] >= threshold_val:
-                    print(f"Validation threshold {threshold_val} reached at epoch {it+1}: {train_state['val_acc_l1'][-1]:.2f}")
+                    print(
+                        f"Validation threshold {threshold_val} reached at epoch {it+1}: {train_state['val_acc_l1'][-1]:.2f}")
                     torch.save(
                         model, f"{save_file}/{m_name}_{run}_threshold_val_{threshold_val}.pt")
                     threshold_val += 1
