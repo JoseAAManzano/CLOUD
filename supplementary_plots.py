@@ -34,10 +34,6 @@ pd.options.mode.chained_assignment = None  # default='warn'
 sns.set(style='whitegrid', context='paper',
         palette='colorblind', font_scale=1.5)
 
-# Misc
-
-# Readout prediction
-
 
 # %% Set-up paramenters
 args = Namespace(

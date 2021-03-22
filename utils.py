@@ -171,55 +171,61 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
     return running_loss, running_acc
 
 
-# def get_distribution_from_context(model, context, vectorizer, softmax=True, device='cpu'):
-#     f_v, _ = vectorizer.vectorize(context)
-#     f_v = f_v.to(device)
-#     out, hidden = model(f_v.unsqueeze(0), hidden)
-#     dist = torch.flatten(out.detach()[:, -1, :])
-#     # Take only valid continuations (letters + SOS)
-#     ret = torch.empty(27)
-#     ret[:-1] = dist[:-3]
-#     ret[-1] = dist[-2]
-#     if softmax:
-#         ret = F.softmax(ret, dim=0)
+def get_distribution_from_context(model, context, vectorizer, device='cpu'):
+    model.eval()
+    
+    f_v, _, v_len = vectorizer.vectorize(context).values()
+    f_v = f_v.to(device)
+    
+    hidden = model.init_hidden(1, device)
+    out, _ , _ = model(f_v.unsqueeze(0), torch.LongTensor([v_len]), hidden,
+                       max_length=v_len)
+    
+    dist = torch.flatten(out.detach()[-1, :].detach())
+    
+    # Take only valid continuations (letters + SOS)
+    ret = torch.empty(27)
+    ret[:-1] = dist[:-3]
+    ret[-1] = dist[-2]
+    
+    ret = F.softmax(ret, dim=0)
+    return ret.numpy()
 
-#     return ret.numpy()
 
+def eval_distributions(model, trie, vectorizer, metrics, vocab_len=27):
+    total_met = defaultdict(float)
+    total_eval = 0
+    q = [trie.root]
+    while q:
+        p = []
+        curr = q.pop(0)
+        cnt = 0
+        for ch in range(vocab_len):
+            if curr.children[ch]:
+                q.append(curr.children[ch])
+                p.append(curr.children[ch].prob)
+            else:
+                cnt += 1
+                p.append(0)
+        if cnt < vocab_len:
+            e_dist = np.float32(p)
+            context = curr.prefix
+            total_eval += 1
 
-# def eval_distributions(model, trie, vectorizer, metrics, vocab_len=27):
-#     total_met = defaultdict(float)
-#     total_eval = 0
-#     q = [trie.root]
-#     while q:
-#         p = []
-#         curr = q.pop(0)
-#         cnt = 0
-#         for ch in range(vocab_len):
-#             if curr.children[ch]:
-#                 q.append(curr.children[ch])
-#                 p.append(curr.children[ch].prob)
-#             else:
-#                 cnt += 1
-#                 p.append(0)
-#         if cnt < vocab_len:
-#             e_dist = np.float32(p)
-#             context = curr.prefix
-#             total_eval += 1
+            if isinstance(model, CharNGram):
+                p_dist = model.get_distribution_from_context(context).values()
+                p_dist = np.float32(list(p_dist))
+            else:
+                p_dist = get_distribution_from_context(model, context,
+                                                       vectorizer)
 
-#             if isinstance(model, CharNGram):
-#                 p_dist = model.get_distribution_from_context(context).values()
-#                 p_dist = np.float32(list(p_dist))
-#             else:
-#                 p_dist = get_distribution_from_context(model, context,
-#                                                        vectorizer)
+            for metric, func in metrics.items():
+                total_met[metric] += func(e_dist, p_dist)
 
-#             for metric, func in metrics.items():
-#                 total_met[metric] += func(e_dist, p_dist)
+    for metric in metrics.keys():
+        total_met[metric] /= total_eval
 
-#     for metric in metrics.keys():
-#         total_met[metric] /= total_eval
-
-#     return total_met
+    return total_met
 
 
 def sample_from_model(model, vectorizer, num_samples=1, sample_size=10,
@@ -656,7 +662,7 @@ class TextDataset(Dataset):
 class CharNGram(object):
     """A character n-gram model trained on a list of words.
 
-    Concepts from Jurafsky, D., & Martin, J.H. (2019). Speech and Language
+    Concepts from Jurafsky, D., & Martin, J.H. (2014). Speech and Language
     Processing. Stanford Press. https://web.stanford.edu/~jurafsky/slp3/
 
     This class is not optimized for large ngram models, use with caution

@@ -30,7 +30,6 @@ from string import ascii_lowercase
 
 # Readout prediction
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.linear_model import LogisticRegression
 from sklearn import metrics as mtr
 
