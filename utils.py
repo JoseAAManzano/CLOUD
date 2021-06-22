@@ -2,7 +2,7 @@
 """
 Classes and functions to handle input data for PyTorch models
 
-Data handling classes are heavily inspired from Rao, D., & McMahan, B. (2019). 
+Data handling classes draw heavily from Rao, D., & McMahan, B. (2019). 
 Natural Language Processing with PyTorch. O'Reilly.
 https://github.com/joosthub/PyTorchNLPBook
 
@@ -28,16 +28,25 @@ from torch.utils.data import Dataset
 # %% Helper functions
 
 
+
 def set_all_seeds(seed, device):
-    """Simultaneously set all seeds from numpy and PyTorch"""
+    """Simultaneously set all seeds from numpy and PyTorch
+    
+    Args:
+        seed (int): seed number
+        device (torch.device): device to send tensors (for GPU computing)
+    """
     np.random.seed(seed)
     torch.manual_seed(seed)
     if device == torch.device('cuda:0'):
         torch.cuda.manual_seed_all(seed)
 
 
-def generate_batches(dataset, batch_size, shuffle=True,
-                     drop_last=True, device="cpu"):
+def generate_batches(dataset,
+                     batch_size, 
+                     shuffle=True,
+                     drop_last=True,
+                     device=torch.device("cpu")):
     """
     Generator function wrapping PyTorch's DataLoader
 
@@ -65,7 +74,12 @@ def generate_batches(dataset, batch_size, shuffle=True,
         yield out_data_dict
 
 
-def make_train_state(save_file=''):
+def make_train_state(save_file):
+    """Initializes history state dictionary
+    
+    Args:
+        save_file (str): path to save directory
+    """
     return {
         'epoch_idx': 0,
         'model_save_file': save_file,

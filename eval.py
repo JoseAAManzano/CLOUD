@@ -20,7 +20,7 @@ import torch.nn.functional as F
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=1.5)
+sns.set(style='whitegrid', context='paper', palette='Greys', font_scale=1.5)
 
 # Misc
 from argparse import Namespace
@@ -118,6 +118,8 @@ sns.heatmap(data=tmp, cmap='Blues', annot=annot, fmt='',
             vmin=0., vmax=0.6)
 
 #%% Plot word CLOUD
+sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=1.5)
+
 hidd_cols = [f"hid_{i+1}" for i in range(model.rnn.hidden_size)]
 
 hidden_file = model_file.split('/')[-1].split('.')[0]
@@ -188,9 +190,9 @@ del pca_res, tmp
 
 # Plot the entire dataset
 ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
-                   hue='Language', hue_order=['ES', 'EN'], palette=['C1', 'C0'],
-                   data=df, alpha=0.8, space=0.1,
-                   xlim=(-70, 70), ylim=(-70, 70), s=2)
+                   hue='Language', hue_order=['ES', 'EN'],
+                   data=df, alpha=0.8, space=0.1, palette='colorblind',
+                   xlim=(-70, 70), ylim=(-70, 70), s=2, markers=['o', 'x'])
 plt.show()
 
 list1 = [x for x in list(print_from(df, 'Word', 0, 20, 40, 60)) if len(x) < 6]
@@ -436,8 +438,8 @@ for ch in range(readout.char.max() + 1):
 sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=2)
 
 g = sns.catplot(x='char', y='AUROC', hue='Version', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                col='dataset', palette=['C1', 'C0', 'C2'],
-                data=readout, kind='point', ci=99)
+                col='dataset', palette=['C1', 'C0', 'C2'], markers=['o', 'x', '*'],
+                data=readout, kind='point', ci=99, scale=1.2)
 g.set(ylim=(0.49, 1.))
 g.axes.flatten()[0].fill([2.5, 8.5, 8.5, 2.5], [0.4,0.4,1,1], 'k', alpha=0.2)
 g.axes.flatten()[0].fill([9.5, 10.5, 10.5, 9.5], [0.4,0.4,1,1], 'k', alpha=0.2)
@@ -447,4 +449,3 @@ g.axes.flatten()[0].set_title('Spanish-English')
 g.axes.flatten()[1].set_title('Spanish-Basque')
 g.axes.flatten()[0].set_xlabel('Character (time-step)')
 g.axes.flatten()[1].set_xlabel('Character (time-step)')
-
