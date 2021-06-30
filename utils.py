@@ -28,10 +28,9 @@ from torch.utils.data import Dataset
 # %% Helper functions
 
 
-
 def set_all_seeds(seed, device):
     """Simultaneously set all seeds from numpy and PyTorch
-    
+
     Args:
         seed (int): seed number
         device (torch.device): device to send tensors (for GPU computing)
@@ -43,7 +42,7 @@ def set_all_seeds(seed, device):
 
 
 def generate_batches(dataset,
-                     batch_size, 
+                     batch_size,
                      shuffle=True,
                      drop_last=True,
                      device=torch.device("cpu")):
@@ -76,7 +75,7 @@ def generate_batches(dataset,
 
 def make_train_state(save_file):
     """Initializes history state dictionary
-    
+
     Args:
         save_file (str): path to save directory
     """
@@ -94,7 +93,7 @@ def make_train_state(save_file):
         'val_acc_l1': [],
         'val_loss_l2': [],
         'val_acc_l2': [],
-        'LDT_score':[],
+        'LDT_score': [],
         'test_loss_l1': -1,
         'test_acc_l1': -1,
         'test_loss_l2': -1,
@@ -189,9 +188,9 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
 def get_probs(batch_gen, model, vectorizer, device, batch_size, size):
     model.to(device)
     model.eval()
-    
+
     probs = torch.zeros(size)
-    
+
     for batch_id, batch_dict in enumerate(batch_gen):
         hidden = model.init_hidden(batch_size, device)
 
@@ -199,71 +198,71 @@ def get_probs(batch_gen, model, vectorizer, device, batch_size, size):
                                hidden,
                                max_length=vectorizer.max_length)
         out = out.detach().view(batch_size, -1, 28).to('cpu')
-        
-        dist = F.softmax(out[:,:,:-1], dim=-1)
-        
+
+        dist = F.softmax(out[:, :, :-1], dim=-1)
+
         for i, (tens, ln, t_v) in enumerate(zip(dist,
-                                 batch_dict['vector_length'].to('cpu'),
-                                 batch_dict['Y'].to('cpu'))):
+                                                batch_dict['vector_length'].to(
+                                                    'cpu'),
+                                                batch_dict['Y'].to('cpu'))):
             x = tens[:ln]
             prob = 1
             for let, idx in zip(x, t_v):
                 prob *= let[idx]
-            
+
             probs[i+batch_id*batch_size] = prob
-    return probs        
+    return probs
 
 
 def lexical_decision_task(args, model, vectorizer):
     ldt = pd.read_csv(args.ldt_path)
     ldt = ldt.sample(frac=1.)
-    
+
     w1 = list(ldt.W1)
     w2 = list(ldt.W2)
-        
-    batch_size = max([x for x in range(101, 500) if len(w1)%x == 0])
-    
+
+    batch_size = max([x for x in range(101, 500) if len(w1) % x == 0])
+
     words = pd.DataFrame(columns=['data'])
     words['data'] = w1
     word_dataset = LDTDataset(words, vectorizer)
-    
-    batch_gen = generate_batches(word_dataset, batch_size, shuffle=False, 
+
+    batch_gen = generate_batches(word_dataset, batch_size, shuffle=False,
                                  drop_last=False, device=args.device)
-    
+
     word_probs = get_probs(batch_gen, model, vectorizer, args.device,
                            batch_size, len(w1))
-        
+
     nonwords = pd.DataFrame(columns=['data'])
     nonwords['data'] = w2
     nonword_dataset = LDTDataset(nonwords, vectorizer)
-    
-    batch_gen = generate_batches(nonword_dataset, batch_size, shuffle=False, 
+
+    batch_gen = generate_batches(nonword_dataset, batch_size, shuffle=False,
                                  drop_last=False, device=args.device)
-    
+
     nonword_probs = get_probs(batch_gen, model, vectorizer, args.device,
                               batch_size, len(w2))
-    
-    
+
     return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100
 
 
 def get_distribution_from_context(model, context, vectorizer, device='cpu'):
     model.eval()
-    
+
     f_v, _, v_len = vectorizer.vectorize(context).values()
     f_v = f_v.to(device)
-    
+
     hidden = model.init_hidden(1, device)
-    out, _ , _ = model(f_v.unsqueeze(0), torch.LongTensor([v_len]), hidden,
-                       max_length=v_len)
-    
+    out, _, _ = model(f_v.unsqueeze(0), torch.LongTensor([v_len]), hidden,
+                      max_length=v_len)
+
     dist = torch.flatten(out.detach()[-1, :].detach())
-    
+
     # Take only valid continuations (letters + SOS)
     ret = torch.empty(27)
     ret[:-1] = dist[:-3]
     ret[-1] = dist[-2]
-    
+
     ret = F.softmax(ret, dim=0)
     return ret.numpy()
 
@@ -351,9 +350,9 @@ class Vocabulary(object):
             stoi = {}
         self._stoi = stoi
         self._itos = {i: s for s, i in self._stoi.items()}
-        
-        self._EOS_token =  EOS
-            
+
+        self._EOS_token = EOS
+
         self._PAD_token = PAD
 
         if self._EOS_token is not None:
@@ -729,9 +728,10 @@ class TextDataset(Dataset):
 
 
 # LDT Dataset
-        
+
 class LDTDataset(Dataset):
     """Dataloader class for the LDT task"""
+
     def __init__(self, df, vectorizer=None):
         """
         Args:
@@ -744,7 +744,7 @@ class LDTDataset(Dataset):
             self._vectorizer = Vectorizer.from_df(self.train_df)
         else:
             self._vectorizer = vectorizer
-        
+
     def __len__(self):
         return len(self.df)
 
@@ -869,7 +869,7 @@ class CharNGram(object):
         cntr = Counter()
         for perm in product(self.vocab, repeat=n):
             # Initialize to the laplace additive smoothing constant
-            cntr[tuple(perm)] = self.laplace if use_laplace else 0 
+            cntr[tuple(perm)] = self.laplace if use_laplace else 0
         return cntr
 
     def _smooth(self):
@@ -881,7 +881,7 @@ class CharNGram(object):
         """
         if self.n == 1:
             s = sum(self.ngrams.values())
-            return Counter({key: val/s for key, val in self.ngrams.items()})            
+            return Counter({key: val/s for key, val in self.ngrams.items()})
         else:
             vocab_size = len(self.vocab)-1
 
@@ -894,7 +894,7 @@ class CharNGram(object):
             for ngram, value in self.ngrams.items():
                 m_gram = ngram[:-1]
                 m_count = m_grams[m_gram]
-                ret[ngram] = value /(m_count + self.laplace*vocab_size)
+                ret[ngram] = value / (m_count + self.laplace*vocab_size)
 
             return ret
 
@@ -925,12 +925,12 @@ class CharNGram(object):
                 shape [n_plausible_ngrams, len(vocab)]
         """
         idxs, cols = set(), set()
-        
+
         if raw_counts:
             model = self.ngrams
         else:
             model = self.model
-        
+
         for k in model.keys():
             idxs.add(' '.join(k[:-1]))
             cols.add(k[-1])
@@ -966,13 +966,13 @@ class CharNGram(object):
             else:
                 prob *= p
         return prob / n
-    
+
     def get_multiple_probabilities(self, data, log=False):
         """Calculate probability for multiple words using 
             get_single_probability
         """
         probs = np.zeros(len(data))
-        
+
         for i, w in enumerate(data):
             probs[i] = self.get_single_probability(w, log=log)
         return probs
@@ -1003,9 +1003,9 @@ class CharNGram(object):
         N = len(data)
 
         probs = self.get_multiple_probabilities(data, log=True)
-        
+
         res = sum(-p for p in probs)
-        
+
         return np.exp(res/N)
 
     def get_distribution_from_context(self, context):
