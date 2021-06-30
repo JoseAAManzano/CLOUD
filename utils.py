@@ -93,7 +93,9 @@ def make_train_state(save_file):
         'val_acc_l1': [],
         'val_loss_l2': [],
         'val_acc_l2': [],
-        'LDT_score': [],
+        'LDT_train_score': [],
+        'LDT_val_score': [],
+        'LDT_test_score': 0,
         'test_loss_l1': -1,
         'test_acc_l1': -1,
         'test_loss_l2': -1,
@@ -185,7 +187,33 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
     return running_loss, running_acc
 
 
-def get_probs(batch_gen, model, vectorizer, device, batch_size, size):
+def get_single_probability(word, model, vectorizer, device, log=False):
+    model.to(device)
+    model.eval()
+
+    word_prob = 1 if not log else 0
+
+    for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+        f_v, t_v = f_v.to(device), t_v.to(device)
+        hidden = model.init_hidden(1, device)
+
+        out_letters, _, _ = model(f_v.unsqueeze(0),
+                                  torch.LongTensor([i+1]),
+                                  hidden)
+
+        if log:
+            probs = F.log_softmax(
+                out_letters[-1], dim=0).detach().to('cpu').numpy()
+            word_prob += probs[t_v.item()]
+        else:
+            probs = F.softmax(
+                out_letters[-1], dim=0).detach().to('cpu').numpy()
+            word_prob *= probs[t_v.item()]
+
+    return word_prob
+
+
+def get_multiple_probabilities(batch_gen, model, vectorizer, device, batch_size, size):
     model.to(device)
     model.eval()
 
@@ -214,8 +242,12 @@ def get_probs(batch_gen, model, vectorizer, device, batch_size, size):
     return probs
 
 
-def lexical_decision_task(args, model, vectorizer):
+def lexical_decision_task(args, model, vectorizer, split='train'):
     ldt = pd.read_csv(args.ldt_path)
+    try:
+        ldt = ldt[ldt.split == split]
+    except:
+        print('Only train/val/test splits allowed')
     ldt = ldt.sample(frac=1.)
 
     w1 = list(ldt.W1)
@@ -230,8 +262,8 @@ def lexical_decision_task(args, model, vectorizer):
     batch_gen = generate_batches(word_dataset, batch_size, shuffle=False,
                                  drop_last=False, device=args.device)
 
-    word_probs = get_probs(batch_gen, model, vectorizer, args.device,
-                           batch_size, len(w1))
+    word_probs = get_multiple_probabilities(batch_gen, model, vectorizer, args.device,
+                                            batch_size, len(w1))
 
     nonwords = pd.DataFrame(columns=['data'])
     nonwords['data'] = w2
@@ -240,8 +272,8 @@ def lexical_decision_task(args, model, vectorizer):
     batch_gen = generate_batches(nonword_dataset, batch_size, shuffle=False,
                                  drop_last=False, device=args.device)
 
-    nonword_probs = get_probs(batch_gen, model, vectorizer, args.device,
-                              batch_size, len(w2))
+    nonword_probs = get_multiple_probabilities(batch_gen, model, vectorizer, args.device,
+                                               batch_size, len(w2))
 
     return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100
 

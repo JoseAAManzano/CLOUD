@@ -34,7 +34,7 @@ class CLOUD(nn.Module):
         self.char_vocab_size = char_vocab_size
         self.pad_idx = pad_idx
         self.n_embedd = n_embedd
-        
+
         if self.n_embedd > 1:
             self.E = nn.Embedding(num_embeddings=char_vocab_size,
                                   embedding_dim=n_embedd,

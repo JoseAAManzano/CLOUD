@@ -25,8 +25,6 @@ pd.options.mode.chained_assignment = None  # default='warn'
 sns.set(style='whitegrid', context='paper',
         palette='colorblind', font_scale=1.5)
 
-# Misc
-
 # %% Set-up paramenters
 args = Namespace(
     # Path and data information
@@ -43,13 +41,7 @@ args = Namespace(
     n_rnn_layers=1,
     drop_p=0.0,
     # Training hyperparameters
-    n_epochs=50,
     learning_rate=2e-3,
-    batch_size=82,
-    # Meta parameters
-    acc_threshold=30,
-    plotting=False,
-    print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
     seed=404
 )
@@ -77,21 +69,23 @@ vectorizer = utils.Vectorizer.from_df(eval_words)
 
 mask_index = vectorizer.data_vocab.PAD_idx
 
-reps_per_block = 1
-topk = 4
+threshold = 'threshold_ldt_85'
+
+# reps_per_block = 1
+# topk = 4
 
 
-def score_word(prod, target):
-    score = 0
-    if prod == target:
-        score = 100
-    else:
-        for i, l in enumerate(prod):
-            if i > len(target)-1:
-                score -= 20
-            elif l == target[i]:
-                score += 20
-    return score if 0 <= score <= 100 else 0
+# def score_word(prod, target):
+#     score = 0
+#     if prod == target:
+#         score = 100
+#     else:
+#         for i, l in enumerate(prod):
+#             if i > len(target)-1:
+#                 score -= 20
+#             elif l == target[i]:
+#                 score += 20
+#     return score if 0 <= score <= 100 else 0
 
 
 res = defaultdict(list)
@@ -117,115 +111,120 @@ for data, category in zip(args.datafiles, args.modelfiles):
             exp_words = exp_words.sample(frac=1., replace=False)
             exp_words['cat'] = range(48)
 
+            # RECOGNITION TASK
+            # model = torch.load(args.model_save_file +
+            #                    f"{m_name}/{m_name}_{run}_{threshold}.pt")
+            # model.to(args.device)
+            # model.train()
+
+            # lp = TaskSubsystem(args.hidden_dims, 48)
+            # lp.to(args.device)
+            # lp.train()
+
+            # optimizer = torch.optim.Adam(
+            #     lp.parameters(),
+            #     lr=args.learning_rate)
+
+            # for it in range(5):
+            #     exp_words = exp_words.sample(frac=1., replace=False)
+            #     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+            #         optimizer.zero_grad()
+            #         rep = torch.zeros(args.hidden_dims).to(args.device)
+            #         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+            #             f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+            #             hidden = model.init_hidden(1, args.device)
+
+            #             _, out_rnn, _ = model(f_v.unsqueeze(0),
+            #                                     torch.LongTensor([i+1]),
+            #                                     hidden,
+            #                                     args.drop_p)
+
+            #             rep += torch.flatten(out_rnn.squeeze(0)[-1])
+
+            #         rep /= i+1
+
+            #         out_cat = lp(rep)
+
+            #         target = torch.LongTensor([cat]).to(args.device)
+
+            #         loss = F.cross_entropy(
+            #             out_cat.unsqueeze(0), target, reduction='sum')
+
+            #         loss.backward()
+            #         optimizer.step()
+
+            #         # _, preds = torch.topk(
+            #         #     F.log_softmax(out_cat, dim=0), k=topk)
+            #         # acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
+
+            #         cat_prob = F.softmax(
+            #             out_cat, dim=0).detach().to('cpu').numpy()
+            #         cat_prob = cat_prob[cat]
+
+            #         res['dataset'].append(category)
+            #         res['prob'].append(end)
+            #         res['run'].append(run)
+            #         res['word'].append(word)
+            #         res['Group'].append(grp)
+            #         res['label'].append(lab)
+            #         res['block'].append(it + 1)
+            #         res['trl'].append(tr+1)
+            #         res['loss'].append(loss.item())
+            #         res['type'].append('reco')
+            #         res['acc'].append(cat_prob)
+            
+            # PRODUCTION TASK
             model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_threshold_ldt_85.pt")
+                               f"{m_name}/{m_name}_{run}_{threshold}.pt")
             model.to(args.device)
             model.train()
-
-            lp = TaskSubsystem(args.hidden_dims, 48)
-            lp.to(args.device)
-            lp.train()
-
-            optimizer = torch.optim.Adam(
-                lp.parameters(),
-                lr=args.learning_rate)
 
             optimizer_letters = torch.optim.Adam(
                 model.parameters(),
                 lr=args.learning_rate)
 
             for it in range(5):
-                for tr in range(reps_per_block):
+                exp_words = exp_words.sample(frac=1., replace=False)
+                for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+                    word_prob = 1
+                    loss = 0
+                    optimizer_letters.zero_grad()
+                    for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+                        f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                        hidden = model.init_hidden(1, args.device)
 
-                    # Recognition task
-                    exp_words = exp_words.sample(frac=1., replace=False)
-                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        optimizer.zero_grad()
-                        rep = torch.zeros(args.hidden_dims).to(args.device)
-                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = model.init_hidden(1, args.device)
+                        out_letters, _, _ = model(f_v.unsqueeze(0),
+                                                    torch.LongTensor([i+1]),
+                                                    hidden,
+                                                    args.drop_p)
 
-                            _, out_rnn, _ = model(f_v.unsqueeze(0),
-                                                  torch.LongTensor([i+1]),
-                                                  hidden,
-                                                  args.drop_p)
+                        loss += F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
+                                                ignore_index=mask_index,
+                                                reduction='sum')
 
-                            rep += torch.flatten(out_rnn.squeeze(0)[-1])
+                        # _, idx = torch.max(
+                        #     F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
+                        # idxs.append(idx.item())
 
-                        rep /= i+1
+                        probs = F.softmax(
+                            out_letters[-1], dim=0).detach().to('cpu').numpy()
+                        word_prob *= probs[t_v.item()]
 
-                        out_cat = lp(rep)
+                    loss.backward()
+                    optimizer_letters.step()
+                    # prod_word = vectorizer.decode(idxs)
+                    # acc_letters = score_word(prod_word, word)
 
-                        target = torch.LongTensor([cat]).to(args.device)
-
-                        loss = F.cross_entropy(
-                            out_cat.unsqueeze(0), target, reduction='sum')
-
-                        loss.backward()
-                        optimizer.step()
-
-                        # _, preds = torch.topk(
-                        #     F.log_softmax(out_cat, dim=0), k=topk)
-                        # acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
-                        
-                        cat_prob = F.softmax(out_cat, dim=0).detach().to('cpu').numpy()
-                        cat_prob = cat_prob[cat]
-
-                        res['dataset'].append(category)
-                        res['prob'].append(end)
-                        res['run'].append(run)
-                        res['word'].append(word)
-                        res['Group'].append(grp)
-                        res['label'].append(lab)
-                        res['block'].append(it + 1)
-                        res['trl'].append(tr+1)
-                        res['loss'].append(loss.item())
-                        res['type'].append('reco')
-                        res['acc'].append(cat_prob)
-
-                    # Production task
-                    exp_words = exp_words.sample(frac=1., replace=False)
-                    for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        word_prob = 1
-                        loss = 0
-                        for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-                            optimizer_letters.zero_grad()
-                            f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-                            hidden = model.init_hidden(1, args.device)
-
-                            out_letters, _, _ = model(f_v.unsqueeze(0),
-                                                      torch.LongTensor([i+1]),
-                                                      hidden,
-                                                      args.drop_p)
-
-                            loss += F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
-                                                    ignore_index=mask_index,
-                                                    reduction='sum')
-
-                            # _, idx = torch.max(
-                            #     F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
-                            # idxs.append(idx.item())
-                        
-                            probs = F.softmax(out_letters[-1], dim=0).detach().to('cpu').numpy()
-                            word_prob *= probs[t_v.item()]
-                        
-                        loss.backward()
-                        optimizer_letters.step()
-                        # prod_word = vectorizer.decode(idxs)
-                        # acc_letters = score_word(prod_word, word)
-
-                        res['dataset'].append(category)
-                        res['prob'].append(end)
-                        res['run'].append(run)
-                        res['word'].append(word)
-                        res['Group'].append(grp)
-                        res['label'].append(lab)
-                        res['block'].append(it + 1)
-                        res['trl'].append(tr+1)
-                        res['loss'].append(loss.item())
-                        res['type'].append('prod')
-                        res['acc'].append(word_prob)
+                    res['dataset'].append(category)
+                    res['prob'].append(end)
+                    res['run'].append(run)
+                    res['word'].append(word)
+                    res['Group'].append(grp)
+                    res['label'].append(lab)
+                    res['block'].append(it + 1)
+                    res['loss'].append(loss.item())
+                    res['type'].append('prod')
+                    res['acc'].append(word_prob)
 
             # Save a trained version of the model after the 5 blocks
             #torch.save(model, f'models/{m_name}/{m_name}_{run}_trained.pt')
@@ -235,6 +234,6 @@ res = pd.DataFrame(res)
 #res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
 
 g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                col='label', col_order=['ES-', 'ES+'], row='type', row_order=['reco', 'prod'],
+                col='label', col_order=['ES-', 'ES+'], #row='type', row_order=['reco', 'prod'],
                 data=res, kind='point', ci=99)
 plt.show()

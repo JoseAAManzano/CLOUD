@@ -27,14 +27,14 @@ args = argparse.Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=5,  # How many versions of the models to train
+    n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.0,
     # Training hyperparameters
-    n_epochs=50,
+    n_epochs=100,
     learning_rate=2e-3,
     batch_size=82,  # Selected based on train-val-test sizes
     # Meta parameters
@@ -52,7 +52,7 @@ utils.set_all_seeds(args.seed, args.device)
 
 for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
-        # No need to run the monolingual versions twice 
+        # No need to run the monolingual versions twice
         if data == 'ESP-EUS.csv' and prob == args.probs[-1]:
             continue
 
@@ -63,9 +63,10 @@ for data, category in zip(args.datafiles, args.modelfiles):
         mask_index = vectorizer.data_vocab.PAD_idx
 
         for run in range(args.n_runs):
-            threshold = args.acc_threshold
-            threshold_val = args.acc_threshold
+            # threshold = args.acc_threshold
+            # threshold_val = args.acc_threshold
             threshold_ldt = args.acc_threshold
+            threshold_val_ldt = args.acc_threshold
 
             m_name = f"{category}_{end}"
 
@@ -101,8 +102,9 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     print(f"Epoch: {it+1:03d} |",
                           f"Avg. train acc: {np.mean(train_state['train_acc'][-args.print_freq:]):.2f} |",
                           f"Avg. val acc L1: {np.mean(train_state['val_acc_l1'][-args.print_freq:]):.2f} |",
-                          f"Avg. val acc L2: {np.mean(train_state['val_acc_l2'][-args.print_freq:]):.2f}",
-                          f"Avg. LDT Score: {np.mean(train_state['LDT_score'][-args.print_freq:]):.2f}")
+                          f"Avg. val acc L2: {np.mean(train_state['val_acc_l2'][-args.print_freq:]):.2f} |",
+                          f"Avg. LDT Train Score: {np.mean(train_state['LDT_train_score'][-args.print_freq:]):.2f} |",
+                          f"Avg. LDT Val Score: {np.mean(train_state['LDT_val_score'][-args.print_freq:]):.2f}")
 
                 train_state['epoch_idx'] = it + 1
 
@@ -139,7 +141,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
                 train_state['train_loss'].append(running_loss)
                 train_state['train_acc'].append(running_acc)
-                
+
                 # EVAL
                 eval_loss_l1, eval_acc_l1 = utils.evaluate_model(
                     args, model, split='val_l1', dataset=dataset, mask_index=mask_index, max_length=vectorizer.max_length)
@@ -174,35 +176,42 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     train_state['best_joint_acc'] = joint_acc
                     train_state['best_epoch_idx_acc'] = train_state['epoch_idx']
 
-                if train_state['train_acc'][-1] >= threshold:
-                    print(
-                        f"Train threshold {threshold} reached at epoch {it+1}: {train_state['train_acc'][-1]:.2f}")
-                    torch.save(
-                        model, f"{save_file}/{m_name}_{run}_threshold_train_{threshold}.pt")
-                    threshold += 1
-                if train_state['val_acc_l1'][-1] >= threshold_val:
-                    print(
-                        f"Validation threshold {threshold_val} reached at epoch {it+1}: {train_state['val_acc_l1'][-1]:.2f}")
-                    torch.save(
-                        model, f"{save_file}/{m_name}_{run}_threshold_val_{threshold_val}.pt")
-                    threshold_val += 1
-                
+                # if train_state['train_acc'][-1] >= threshold:
+                #     print(
+                #         f"Train threshold {threshold} reached at epoch {it+1}: {train_state['train_acc'][-1]:.2f}")
+                #     torch.save(
+                #         model, f"{save_file}/{m_name}_{run}_threshold_train_{threshold}.pt")
+                #     threshold += 1
+                # if train_state['val_acc_l1'][-1] >= threshold_val:
+                #     print(
+                #         f"Validation threshold {threshold_val} reached at epoch {it+1}: {train_state['val_acc_l1'][-1]:.2f}")
+                #     torch.save(
+                #         model, f"{save_file}/{m_name}_{run}_threshold_val_{threshold_val}.pt")
+                #     threshold_val += 1
+
                 if args.run_ldt:
-                    train_state['LDT_score'].append(utils.lexical_decision_task(args, model, vectorizer))
-                    if train_state['LDT_score'][-1] >= 90:
+                    train_state['LDT_train_score'].append(
+                        utils.lexical_decision_task(args, model, vectorizer, split='train'))
+                    train_state['LDT_val_score'].append(
+                        utils.lexical_decision_task(args, model, vectorizer, split='val'))
+                    if train_state['LDT_train_score'][-1] >= 90:
                         print(
-                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_score'][-1]:.2f}")
+                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_train_score'][-1]:.2f}")
                         torch.save(
                             model, f"{save_file}/{m_name}_{run}_threshold_ldt_90.pt")
                         break
-                    if train_state['LDT_score'][-1] >= threshold_ldt:
+                    if train_state['LDT_train_score'][-1] >= threshold_ldt:
                         print(
-                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_score'][-1]:.2f}")
+                            f"LDT train threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_train_score'][-1]:.2f}")
                         torch.save(
                             model, f"{save_file}/{m_name}_{run}_threshold_ldt_{threshold_ldt}.pt")
                         threshold_ldt += 5
-                    
-
+                    if train_state['LDT_val_score'][-1] >= threshold_val_ldt:
+                        print(
+                            f"LDT val threshold {threshold_val_ldt} reached at epoch {it+1}: {train_state['LDT_val_score'][-1]:.2f}")
+                        torch.save(
+                            model, f"{save_file}/{m_name}_{run}_threshold_val_ldt_{threshold_ldt}.pt")
+                        threshold_val_ldt += 5
 
             # TEST
             test_loss_l1, test_acc_l1 = utils.evaluate_model(
@@ -215,6 +224,10 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
             train_state['test_loss_l2'] = test_loss_l2
             train_state['test_acc_l2'] = test_acc_l2
+
+            if args.run_ldt:
+                train_state['LDT_test_score'] = utils.lexical_decision_task(
+                    args, model, vectorizer, split='test')
 
             train_state['run_time'] = f"{(datetime.now() - t0).seconds}s"
 

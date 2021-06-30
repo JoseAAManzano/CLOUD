@@ -9,6 +9,7 @@ Created on Wed Mar 17 10:03:41 2021
 # %% Imports
 
 # Utilities
+from itertools import combinations
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn import metrics as mtr
@@ -440,7 +441,7 @@ plt.show()
 
 #simil.to_csv('results/backup_similarities.csv', index=False, encoding='utf-8')
 
-#%% SUPPLEMENTARY FIGURE X
+# %% SUPPLEMENTARY FIGURE X
 sns.set(style='whitegrid', context='paper',
         palette='colorblind', font_scale=1.5)
 
@@ -450,7 +451,7 @@ sns.set(style='whitegrid', context='paper',
 letters = list(ascii_lowercase) + ['<s>']
 
 
-d = {} 
+d = {}
 # 'MONO': np.zeros((28, 28)),
 # 'ES-EN': np.zeros((28, 28)),
 # 'ES-EU': np.zeros((28, 28))
@@ -459,86 +460,86 @@ for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
         if prob == 100 and category == 'ESEU':
             continue
-        
+
         end = f"{prob:02}-{100-prob:02}"
         m_name = f"{category}_{end}"
-        
+
         if "100-00" in m_name:
             cat = 'MONO'
         elif "ESEN" in m_name:
             cat = 'ES-EN'
         else:
             cat = 'ES-EU'
-        
+
         d[cat] = {}
-        
+
         for run in range(args.n_runs):
             print(f"\n{data}: {m_name}_{run}\n")
             model = torch.load(args.model_save_file +
                                f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
             model.to(args.device)
             model.eval()
-            
+
             d[cat][run] = model.E.weight.detach().to('cpu').numpy()[:-2, :]
-        
+
         simil = cosine_similarity(d[cat][0], d[cat][0])
-        
-        plt.figure(figsize=(8,6))
-        g = sns.heatmap(np.tril(simil), yticklabels=letters, xticklabels=letters, 
+
+        plt.figure(figsize=(8, 6))
+        g = sns.heatmap(np.tril(simil), yticklabels=letters, xticklabels=letters,
                         cmap='vlag',
                         vmin=-1, vmax=1)
         g.set(title=cat)
         plt.yticks(rotation=0)
         plt.xticks(rotation=0)
         plt.show()
-        
-#%% 
+
+# %%
 sns.set(style='white', context='paper',
-        palette='colorblind', font_scale=1.5)        
-      
-        
+        palette='colorblind', font_scale=1.5)
+
+
 cats = ['ES-EN', 'ES-EU', 'MONO']
 
 dat = pd.DataFrame()
 
-for i,c in enumerate(cats):
+for i, c in enumerate(cats):
     # plt.figure(figsize=(8,6))
     # plt.title(c)
     # ax = sch.dendrogram(sch.linkage(d[c], method='ward'), labels=letters,
     #                     leaf_rotation=0, leaf_font_size=12, orientation='left')
     # plt.show()
-    
+
     # dt = d[c]
     # cluster = AgglomerativeClustering(n_clusters=5, affinity='cosine', linkage='average')
     # cluster.fit(d[c])
-    tsne = PCA(n_components=2)#, perplexity=100, n_jobs=-1, random_state=args.seed-i)
+    # , perplexity=100, n_jobs=-1, random_state=args.seed-i)
+    tsne = PCA(n_components=2)
     dt = tsne.fit_transform(d[c][0])
-    data = pd.DataFrame({'x':dt[:, 0], 'y':dt[:, 1], 'val':letters, 'cat':c})
+    data = pd.DataFrame(
+        {'x': dt[:, 0], 'y': dt[:, 1], 'val': letters, 'cat': c})
     dat = pd.concat([dat, data], axis=0, ignore_index=True)
-    
-dat['hue'] = dat['cat'].map({'ES-EN':0, 'ES-EU':2, 'MONO':1})
 
-plt.figure(figsize=(12,10))
+dat['hue'] = dat['cat'].map({'ES-EN': 0, 'ES-EU': 2, 'MONO': 1})
+
+plt.figure(figsize=(12, 10))
 ax = sns.scatterplot('x', 'y', hue='cat', data=dat, palette=['C0', 'C2', 'C1'],
                      s=0, legend=True)
 pal = sns.color_palette('colorblind').as_hex()
 for i, point in dat.iterrows():
-    ax.text(point['x'], point['y'], str(point['val']), fontsize=20, color=pal[point['hue']])  
+    ax.text(point['x'], point['y'], str(point['val']),
+            fontsize=20, color=pal[point['hue']])
 plt.show()
-    
-#%%        
+
+# %%
 # Plot contrasts
-from itertools import combinations
 
 cats = ['ES-EN', 'ES-EU', 'MONO']
 
 for cmb in combinations(cats, 2):
     sim = d[cmb[0]] - d[cmb[1]]
-    
-    plt.figure(figsize=(8,6))
+
+    plt.figure(figsize=(8, 6))
     g = sns.heatmap(sim, yticklabels=letters,
                     cmap='vlag', vmin=-1, vmax=1)
     g.set(title=cmb)
     plt.show()
-    
-    

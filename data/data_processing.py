@@ -48,6 +48,7 @@ eus = eus[(eus.len >= 3) & (eus.len <= 10)]
 
 nwd = nwd[(nwd.len >= 3) & (nwd.len <= 10)]
 
+
 def preprocess(st):
     st = ''.join(c for c in unicodedata.normalize('NFD', st)
                  if unicodedata.category(c) != 'Mn')
@@ -97,7 +98,8 @@ eng_vals = eng_data.len.value_counts(
     sort=False).rename_axis('len').reset_index(name='counts')
 eus_vals = eus_data.len.value_counts(
     sort=False).rename_axis('len').reset_index(name='counts')
-nwd_vals = nwd.len.value_counts(sort=False).rename_axis('len').reset_index(name='counts')
+nwd_vals = nwd.len.value_counts(sort=False).rename_axis(
+    'len').reset_index(name='counts')
 
 new_esp = pd.DataFrame()
 new_eng = pd.DataFrame()
@@ -107,7 +109,8 @@ new_nwd = pd.DataFrame()
 for l, es, en, eu in zip(esp_vals.len, esp_vals.counts, eng_vals.counts, eus_vals.counts):
     n = min(es, en, eu)
     repl = nwd_vals[nwd_vals.len == l]['counts'] < n
-    new_nwd = pd.concat([new_nwd, nwd[nwd.len == l].sample(n, replace=repl.iloc[0])])
+    new_nwd = pd.concat(
+        [new_nwd, nwd[nwd.len == l].sample(n, replace=repl.iloc[0])])
     new_esp = pd.concat([new_esp, esp_data[esp_data.len == l].sample(n)])
     new_eng = pd.concat([new_eng, eng_data[eng_data.len == l].sample(n)])
     new_eus = pd.concat([new_eus, eus_data[eus_data.len == l].sample(n)])
