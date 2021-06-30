@@ -19,7 +19,7 @@ class CLOUD(nn.Module):
     The model uses the hidden representations to output the probability distribution of the next character.
     """
 
-    def __init__(self, char_vocab_size, n_embedd=32, n_hidden=128, n_layers=1, drop_p=0.0, pad_idx=None):
+    def __init__(self, char_vocab_size, n_embedd=1, n_hidden=128, n_layers=1, drop_p=0.0, pad_idx=None):
         """
         Args:
             char_vocab_size (int): The number of characters in the vocabulary (alphabet + special characters)
@@ -33,10 +33,12 @@ class CLOUD(nn.Module):
         self.n_layers = n_layers
         self.char_vocab_size = char_vocab_size
         self.pad_idx = pad_idx
-
-        self.E = nn.Embedding(num_embeddings=char_vocab_size,
-                              embedding_dim=n_embedd,
-                              padding_idx=pad_idx)
+        self.n_embedd = n_embedd
+        
+        if self.n_embedd > 1:
+            self.E = nn.Embedding(num_embeddings=char_vocab_size,
+                                  embedding_dim=n_embedd,
+                                  padding_idx=pad_idx)
 
         self.rnn = nn.LSTM(
             input_size=n_embedd,
@@ -58,7 +60,10 @@ class CLOUD(nn.Module):
             max_length (int): Maximum length of padded sequences (avoids errors). 
                 If None the pad_packed_sequence function will infer the max length
         """
-        X = self.E(X)
+        if self.n_embedd > 1:
+            X = self.E(X)
+        else:
+            X = X.unsqueeze(-1).float()
 
         X = nn.utils.rnn.pack_padded_sequence(X, X_lengths, batch_first=True)
 

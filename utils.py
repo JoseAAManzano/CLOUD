@@ -94,6 +94,7 @@ def make_train_state(save_file):
         'val_acc_l1': [],
         'val_loss_l2': [],
         'val_acc_l2': [],
+        'LDT_score':[],
         'test_loss_l1': -1,
         'test_acc_l1': -1,
         'test_loss_l2': -1,
@@ -116,10 +117,10 @@ def save_train_state(train_state, save_file):
         json.dump(train_state, fp)
 
 
-def compute_lang_accuracy(y_pred, y_target):
-    preds = torch.sigmoid(y_pred)
-    n_correct = torch.eq(preds > 0.5, y_target).sum().item()
-    return n_correct / len(preds) * 100
+# def compute_lang_accuracy(y_pred, y_target):
+#     preds = torch.sigmoid(y_pred)
+#     n_correct = torch.eq(preds > 0.5, y_target).sum().item()
+#     return n_correct / len(preds) * 100
 
 
 def normalize_sizes(y_pred, y_true):
@@ -169,7 +170,7 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
     for batch_id, batch_dict in enumerate(batch_generator):
         hidden = model.init_hidden(args.batch_size, args.device)
 
-        out, _, hidden = model(
+        out, _, _ = model(
             batch_dict['X'], batch_dict['vector_length'], hidden, max_length=max_length)
 
         loss = compute_loss(
@@ -183,6 +184,67 @@ def evaluate_model(args, model, split, dataset, mask_index=None, max_length=11):
         running_acc += (acc_chars - running_acc) / (batch_id + 1)
 
     return running_loss, running_acc
+
+
+def get_probs(batch_gen, model, vectorizer, device, batch_size, size):
+    model.to(device)
+    model.eval()
+    
+    probs = torch.zeros(size)
+    
+    for batch_id, batch_dict in enumerate(batch_gen):
+        hidden = model.init_hidden(batch_size, device)
+
+        out, _, hidden = model(batch_dict['X'], batch_dict['vector_length'],
+                               hidden,
+                               max_length=vectorizer.max_length)
+        out = out.detach().view(batch_size, -1, 28).to('cpu')
+        
+        dist = F.softmax(out[:,:,:-1], dim=-1)
+        
+        for i, (tens, ln, t_v) in enumerate(zip(dist,
+                                 batch_dict['vector_length'].to('cpu'),
+                                 batch_dict['Y'].to('cpu'))):
+            x = tens[:ln]
+            prob = 1
+            for let, idx in zip(x, t_v):
+                prob *= let[idx]
+            
+            probs[i+batch_id*batch_size] = prob
+    return probs        
+
+
+def lexical_decision_task(args, model, vectorizer):
+    ldt = pd.read_csv(args.ldt_path)
+    ldt = ldt.sample(frac=1.)
+    
+    w1 = list(ldt.W1)
+    w2 = list(ldt.W2)
+        
+    batch_size = max([x for x in range(101, 500) if len(w1)%x == 0])
+    
+    words = pd.DataFrame(columns=['data'])
+    words['data'] = w1
+    word_dataset = LDTDataset(words, vectorizer)
+    
+    batch_gen = generate_batches(word_dataset, batch_size, shuffle=False, 
+                                 drop_last=False, device=args.device)
+    
+    word_probs = get_probs(batch_gen, model, vectorizer, args.device,
+                           batch_size, len(w1))
+        
+    nonwords = pd.DataFrame(columns=['data'])
+    nonwords['data'] = w2
+    nonword_dataset = LDTDataset(nonwords, vectorizer)
+    
+    batch_gen = generate_batches(nonword_dataset, batch_size, shuffle=False, 
+                                 drop_last=False, device=args.device)
+    
+    nonword_probs = get_probs(batch_gen, model, vectorizer, args.device,
+                              batch_size, len(w2))
+    
+    
+    return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100
 
 
 def get_distribution_from_context(model, context, vectorizer, device='cpu'):
@@ -274,30 +336,26 @@ class Vocabulary(object):
     Class to handle vocabulary extracted from list of words or sentences.
     """
 
-    def __init__(self, stoi=None, SOS="<s>", EOS="</s>", PAD="<p>"):
+    def __init__(self, stoi=None, EOS="#", PAD="$"):
         """
         Args:
             stoi (dict or None): mapping from tokens to indices
                 If None, creates an empty dict
                 Default None
-            SOS (str or None): Start-of-Sequence token
-                Default "<s>"
-            EOS (str or None): End-of-Sequence token
-                Default "</s>"
+            EOS (str or None): Edge-of-Sequence token
+                Default " "
             PAD (str or None): Padding token used for handling mini-batches
-                Default "<p>"
+                Default "#"
         """
         if stoi is None:
             stoi = {}
         self._stoi = stoi
         self._itos = {i: s for s, i in self._stoi.items()}
-
-        self._SOS_token = SOS
-        self._EOS_token = EOS
+        
+        self._EOS_token =  EOS
+            
         self._PAD_token = PAD
 
-        if self._SOS_token is not None:
-            self.SOS_idx = self.add_token(self._SOS_token)
         if self._EOS_token is not None:
             self.EOS_idx = self.add_token(self._EOS_token)
         if self._PAD_token is not None:
@@ -308,7 +366,6 @@ class Vocabulary(object):
         return {
             "stoi": self._stoi,
             "itos": self._itos,
-            "SOS_token": self._SOS_token,
             "EOS_token": self._EOS_token,
             "PAD_token": self._PAD_token
         }
@@ -392,14 +449,13 @@ class Vectorizer(object):
             Vectorized data as a dictionary with keys:
                 from_vector, to_vector, vector_length
         """
-        indices = [self.data_vocab.SOS_idx]
+        indices = [self.data_vocab.EOS_idx]
         indices.extend(self.data_vocab.token2idx(t) for t in data)
         indices.append(self.data_vocab.EOS_idx)
 
         if vector_len < 0:
             vector_len = self.max_length
 
-        # , len(self.data_vocab._stoi), dtype=torch.float32)
         from_vector = torch.empty(vector_len, dtype=torch.int64)
         from_indices = indices[:-1]
 
@@ -428,7 +484,7 @@ class Vectorizer(object):
             to_vector (torch.Tensor): target prediction tensor of
                 shape [1, 1]
         """
-        indices = [self.data_vocab.SOS_idx]
+        indices = [self.data_vocab.EOS_idx]
         indices.extend(self.data_vocab.token2idx(c) for c in word)
         indices.append(self.data_vocab.EOS_idx)
 
@@ -472,7 +528,7 @@ class Vectorizer(object):
         stoi = {l: i for i, l in enumerate(string.ascii_lowercase)}
         data_vocab = Vocabulary(stoi=stoi)
         lstoi = {l: i for i, l in enumerate(df.label.unique())}
-        label_vocab = Vocabulary(stoi=lstoi, SOS=None, EOS=None, PAD=None)
+        label_vocab = Vocabulary(stoi=lstoi, EOS=None, PAD=None)
         max_len = max(map(len, df.data))
         return cls(data_vocab, label_vocab, max_len)
 
@@ -482,7 +538,8 @@ class Vectorizer(object):
 class TextDataset(Dataset):
     """Combines Vocabulary and Vectorizer classes into one easy interface"""
 
-    def __init__(self, df, vectorizer=None, p=None, labels=['ESP', 'ENG'], train_size=None, freq_sample=False):
+    def __init__(self, df, vectorizer=None, p=None, labels=['ESP', 'ENG'],
+                 train_size=None, freq_sample=False):
         """
         Args:
             df (pandas.DataFrame): the dataset
@@ -554,14 +611,14 @@ class TextDataset(Dataset):
 
         self.set_split('train')
 
-        # Handles imbalanced labels
-        labels = self.train_df.label.value_counts().to_dict()
+        # # Handles imbalanced labels, not used in current implementation
+        # labels = self.train_df.label.value_counts().to_dict()
 
-        def sort_key(item):
-            return self._vectorizer.label_vocab.token2idx(item[0])
-        sorted_cnts = sorted(labels.items(), key=sort_key)
-        freqs = [cnt for _, cnt in sorted_cnts]
-        self.label_weights = 1.0 / torch.tensor(freqs, dtype=torch.float32)
+        # def sort_key(item):
+        #     return self._vectorizer.label_vocab.token2idx(item[0])
+        # sorted_cnts = sorted(labels.items(), key=sort_key)
+        # freqs = [cnt for _, cnt in sorted_cnts]
+        # self.label_weights = 1.0 / torch.tensor(freqs, dtype=torch.float32)
 
     @classmethod
     def load_dataset_and_make_vectorizer(cls, csv, p=None, labels=['ESP', 'ENG'], train_size=None, freq_sample=False):
@@ -670,6 +727,47 @@ class TextDataset(Dataset):
         """
         return len(self) // batch_size
 
+
+# LDT Dataset
+        
+class LDTDataset(Dataset):
+    """Dataloader class for the LDT task"""
+    def __init__(self, df, vectorizer=None):
+        """
+        Args:
+            df (pandas.DataFrame): the dataset
+            vectorizer (Vectorizer): Vectorizer instantiated from the dataset
+            vectorizer (Vectorizer or None): vectorizer to use
+        """
+        self.df = df
+        if vectorizer is None:
+            self._vectorizer = Vectorizer.from_df(self.train_df)
+        else:
+            self._vectorizer = vectorizer
+        
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, index):
+        """Primary interface between TextDataset and PyTorch's DataLoader
+
+        Used for generating batches of data (see utils.generate_batches)
+
+        Args:
+            index (int): Index of the data point
+        Returns:
+            Dictionary holding the data point with keys
+                [X, Y, label]
+        """
+        row = self.df.iloc[index]
+
+        vector_dict = self._vectorizer.vectorize(row.data)
+
+        return {'X': vector_dict['from_vector'],
+                'Y': vector_dict['to_vector'],
+                'vector_length': vector_dict['vector_length']}
+
+
 # CharNGram Class
 
 
@@ -683,8 +781,7 @@ class CharNGram(object):
     for models of order 5 and above.
     """
 
-    def __init__(self, data=None, n=1, model=None, laplace=1,
-                 SOS_token='<s>', EOS_token='</s>'):
+    def __init__(self, data=None, n=1, laplace=1, EOS_token='#'):
         """Data should be iterable of words
 
         Args:
@@ -692,22 +789,22 @@ class CharNGram(object):
             n (int): order of the model. Should be larger than 0
             laplace (int): additive smoothing factor for unseen combinations
                 Default 1
-            SOS_token (str): Start-of-Sequence token
-            EOS_token (str): End-of-Sequence token
+            EOS_token (str): Edge-of-Sequence token
+                Default " "
         """
         self.n = n
-        self.laplace = laplace
-        self.SOS_token = SOS_token
+        if self.n == 1:
+            self.laplace = 0
+        else:
+            self.laplace = laplace
         self.EOS_token = EOS_token
-        self.vocab = list(string.ascii_lowercase) + [SOS_token, EOS_token]
+        self.vocab = list(string.ascii_lowercase) + [EOS_token]
 
         if data is not None:
             self.data = data
             self.processed_data = self._preprocess(self.data, n)
             self.ngrams = self._split_and_count(self.processed_data, self.n)
             self.model = self._smooth()
-        elif model is not None:
-            self.model = model
 
     def _preprocess(self, data, n):
         """Private method to preprocess a dataset of documents
@@ -724,9 +821,9 @@ class CharNGram(object):
         return new_data
 
     def process_word(self, word, n):
-        """Adds SOS and EOS tokens with padding
+        """Adds EOS tokens with padding
 
-        Adds padding of SOS_tokens and EOS_tokens to each document
+        Adds padding of EOS_tokens to each document
             padding size = n-1 for n > 1
 
         Args:
@@ -736,16 +833,15 @@ class CharNGram(object):
             padded word (List[str])
         """
         pad = max(1, n-1)
-        return [self.SOS_token] * pad +\
-            list(word.lower()) +\
-            [self.EOS_token]
+        return [self.EOS_token] * pad +\
+            list(word.lower()) + [self.EOS_token]
 
     def _split_word(self, word, n):
         """Private generator to handle moving window over word of size n"""
         for i in range(len(word) - n + 1):
             yield tuple(word[i:i+n])
 
-    def _split_and_count(self, data, n):
+    def _split_and_count(self, data, n, use_laplace=True):
         """Private method to create ngram counts
 
         Args:
@@ -760,55 +856,20 @@ class CharNGram(object):
                 cntr[ngram] += 1
         return cntr
 
-    def _initialize_counts(self, n):
+    def _initialize_counts(self, n, use_laplace=True):
         """Private method to initialize the ngram counter
 
         Accounts for unseen tokens by taking the product of the vocabulary
 
         Args:
-            n (int): order of ngram model
+            n (int): order of the ngram model
         Returns:
             cntr (Counter): initialized counter of 0s for each plausible ngram
         """
-        def is_plausible(permutation):
-            if self.SOS_token not in permutation and \
-                    self.EOS_token not in permutation:
-                return True
-            n = len(permutation)
-
-            if self.EOS_token in permutation[0]:
-                return False
-            if self.SOS_token in permutation[-1]:
-                return False
-            flg = False
-            cnt = 0
-            for i in range(n-1, -1, -1):
-                if self.SOS_token == permutation[i]:
-                    flg = True
-                    cnt += 1
-                else:
-                    if flg:
-                        return False
-            if cnt == n:
-                return False
-
-            flg = False
-            cnt = 0
-            for i in range(n):
-                if self.EOS_token == permutation[i]:
-                    flg = True
-                    cnt += 1
-                else:
-                    if flg:
-                        return False
-            return True
-            if cnt == n:
-                return False
-
         cntr = Counter()
         for perm in product(self.vocab, repeat=n):
-            if is_plausible(perm):
-                cntr[tuple(perm)] = 0
+            # Initialize to the laplace additive smoothing constant
+            cntr[tuple(perm)] = self.laplace if use_laplace else 0 
         return cntr
 
     def _smooth(self):
@@ -820,20 +881,20 @@ class CharNGram(object):
         """
         if self.n == 1:
             s = sum(self.ngrams.values())
-            return Counter({key: val/s for key, val in self.ngrams.items()})
+            return Counter({key: val/s for key, val in self.ngrams.items()})            
         else:
             vocab_size = len(self.vocab)-1
 
             ret = self.ngrams.copy()
 
             m = self.n - 1
-            m_grams = self._split_and_count(self.processed_data, m)
+            m_grams = self._split_and_count(self.processed_data, m,
+                                            use_laplace=False)
 
             for ngram, value in self.ngrams.items():
                 m_gram = ngram[:-1]
                 m_count = m_grams[m_gram]
-                ret[ngram] = (value + self.laplace) /\
-                    (m_count + self.laplace * vocab_size)
+                ret[ngram] = value /(m_count + self.laplace*vocab_size)
 
             return ret
 
@@ -854,7 +915,7 @@ class CharNGram(object):
         n = len(model.keys()[0])
         return cls(model, n)
 
-    def to_df(self):
+    def to_df(self, raw_counts=False):
         """Creates a DataFrame from Counter of ngrams
 
         Warning: Do not use with ngrams of order >= 5
@@ -864,13 +925,19 @@ class CharNGram(object):
                 shape [n_plausible_ngrams, len(vocab)]
         """
         idxs, cols = set(), set()
-        for k in self.model.keys():
+        
+        if raw_counts:
+            model = self.ngrams
+        else:
+            model = self.model
+        
+        for k in model.keys():
             idxs.add(' '.join(k[:-1]))
             cols.add(k[-1])
         df = pd.DataFrame(data=0.0,
                           index=sorted(list(idxs)),
                           columns=sorted(list(cols)))
-        for ngram, value in self.model.items():
+        for ngram, value in model.items():
             cntx = ' '.join(ngram[:-1])
             trgt = ngram[-1]
             df.loc[cntx, trgt] = value
@@ -899,6 +966,16 @@ class CharNGram(object):
             else:
                 prob *= p
         return prob / n
+    
+    def get_multiple_probabilities(self, data, log=False):
+        """Calculate probability for multiple words using 
+            get_single_probability
+        """
+        probs = np.zeros(len(data))
+        
+        for i, w in enumerate(data):
+            probs[i] = self.get_single_probability(w, log=log)
+        return probs
 
     def perplexity(self, data):
         """Calculates the perplexity of an entire dataset given the model
@@ -919,18 +996,17 @@ class CharNGram(object):
         the ngram model.
 
         Args:
-            data (\List[str]): datset of words
+            data (List[str]): datset of words
         Returns:
             perplexity (float): perplexity of the dataset given the ngram model
         """
-        test_tokens = self._preprocess(data, self.n)
-        N = len(test_tokens)
+        N = len(data)
 
-        probs = 0.0
-        for word in test_tokens:
-            probs -= self.get_single_probability(word, log=True)
-
-        return math.exp(probs/N)
+        probs = self.get_multiple_probabilities(data, log=True)
+        
+        res = sum(-p for p in probs)
+        
+        return np.exp(res/N)
 
     def get_distribution_from_context(self, context):
         """Get the multinomial distribution for the next character given a
@@ -943,14 +1019,14 @@ class CharNGram(object):
         """
         m = len(context)
         if m < self.n-1:
-            context = [self.SOS_token] * (self.n-m-1) + list(context)
+            context = [self.EOS_token] * (self.n-m-1) + list(context)
         elif m > self.n-1:
             context = list(context[-self.n+1:])
         context = list(context)
         dist = {v: 0 for v in self.vocab}
         for v in self.vocab:
             dist[v] = self.model[tuple(context + [v])]
-        del dist[self.SOS_token]
+        #del dist[self.EOS_token]
         return dist
 
     def calculate_accuracy(self, wordlist, topk=1):
@@ -1002,20 +1078,18 @@ class CharNGram(object):
             word (str): generated word
         """
         for i in range(num):
-            word, prob = [self.SOS_token] * max(1, self.n-1), 1
-            while word[-1] != self.EOS_token:
+            word, prob = "", 1
+            while len(word) <= max_len:
                 prev = () if self.n == 1 else tuple(word[-self.n+1:])
                 blacklist = [self.EOS_token] if len(word) < min_len else []
                 next_token, next_prob = self._next_candidate(prev,
                                                              without=blacklist
                                                              )
-                word.append(next_token)
+                if next_token == self.EOS_token:
+                    break
+                word += next_token
                 prob *= next_prob
-                if len(word) >= max_len:
-                    word.append(self.EOS_token)
-            word = [w for w in word if w not in [self.SOS_token,
-                                                 self.EOS_token]]
-            yield ''.join(word), -1/math.log(prob)
+            yield word, -1/math.log(prob)
 
     def __len__(self):
         return len(self.ngrams)
@@ -1046,7 +1120,7 @@ class Trie(object):
     which is used for retrieval of a key in a dataset of strings.
     """
 
-    def __init__(self, vocab_len=27, EOS='$'):
+    def __init__(self, vocab_len=27, EOS='#'):
         """
         Args:
             vocab_len (int): length of the vocabulary

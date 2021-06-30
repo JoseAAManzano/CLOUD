@@ -60,7 +60,8 @@ args = Namespace(
     plotting=False,
     print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-    seed=404
+    seed=404,
+    ldt_path='data/LDT.csv'
 )
 
 utils.set_all_seeds(args.seed, args.device)
@@ -74,7 +75,7 @@ def print_from(df, col, d1_l, d1_h, d2_l, d2_h):
 
 #%% PLOTS FOR FIGURE 1
 
-model_file = 'models/ESEN_60-40/ESEN_60-40_0_threshold_val_35.pt'
+model_file = 'models/ESEN_100-00/ESEN_100-00_0_threshold_ldt_85.pt'
 dataset = pd.read_csv('data/ESP-ENG.csv')
 vectorizer = utils.Vectorizer.from_df(dataset)
 word = 'model'

@@ -13,7 +13,7 @@ import numpy as np
 
 import scipy.stats as stats
 
-random.seed(4004)
+random.seed(404)
 
 path = os.getcwd()
 os.chdir(path)
@@ -29,15 +29,24 @@ eus.columns = ['spelling','cnt', 'freq_mil', 'sil', 'neighbors']
 eus['len'] = eus['spelling'].apply(len)
 eus['log_freq'] = eus['freq_mil'].apply(np.log)
 
+# Read nonwords for Lexical Decision Task
+nwd = pd.read_csv(os.path.join(file_path, 'LDT_NW.csv'))
+nwd = nwd.dropna()
+nwd.len = nwd.len.map(int)
+
 # %% Normalizing eus data
 eus = eus[(eus.log_freq >= eus.log_freq.quantile(q=0.5))]
-
 esp = esp[(esp.zipf >= esp.zipf.quantile(q=0.5))]
 eng = eng[(eng.ZipfUS >= eng.ZipfUS.quantile(q=0.5))]
+
+nwd = nwd[nwd.percent <= 95]
+nwd = nwd[nwd['count'] > 30]
 
 esp = esp[(esp.len >= 3) & (esp.len <= 10)]
 eng = eng[(eng.len >= 3) & (eng.len <= 10)]
 eus = eus[(eus.len >= 3) & (eus.len <= 10)]
+
+nwd = nwd[(nwd.len >= 3) & (nwd.len <= 10)]
 
 def preprocess(st):
     st = ''.join(c for c in unicodedata.normalize('NFD', st)
@@ -49,9 +58,16 @@ esp['spelling'] = esp['spelling'].map(preprocess)
 eng['spelling'] = eng['spelling'].map(preprocess)
 eus['spelling'] = eus['spelling'].map(preprocess)
 
+nwd['spelling'] = nwd['spelling'].map(preprocess)
+
 esp = esp.drop_duplicates(subset='spelling')
 eng = eng.drop_duplicates(subset='spelling')
 eus = eus.drop_duplicates(subset='spelling')
+
+nwd = nwd.drop_duplicates(subset='spelling')
+nwd = nwd[~(nwd.spelling.isin(esp.spelling))]
+nwd = nwd[~(nwd.spelling.isin(eng.spelling))]
+nwd = nwd[~(nwd.spelling.isin(eus.spelling))]
 
 cols = ['data', 'freq']
 
@@ -70,6 +86,8 @@ esp_data = esp_data.sort_values(by='len')
 eng_data = eng_data.sort_values(by='len')
 eus_data = eus_data.sort_values(by='len')
 
+nwd = nwd.sort_values(by='len')
+
 # %% Match length distribution by sampling from the smallest values
 
 esp_vals = esp_data.len.value_counts(sort=False).rename_axis('len').reset_index(name='counts')
@@ -79,32 +97,31 @@ eus_vals = eus_data.len.value_counts(sort=False).rename_axis('len').reset_index(
 new_esp = pd.DataFrame()
 new_eng = pd.DataFrame()
 new_eus = pd.DataFrame()
+new_nwd = pd.DataFrame()
 
 for l, es, en, eu in zip(esp_vals.len, esp_vals.counts, eng_vals.counts, eus_vals.counts):
     n = min(es, en, eu)
+    new_nwd = pd.concat([new_nwd, nwd[nwd.len == l].sample(n, replace=True)])
     new_esp = pd.concat([new_esp, esp_data[esp_data.len == l].sample(n)])
     new_eng = pd.concat([new_eng, eng_data[eng_data.len == l].sample(n)])
     new_eus = pd.concat([new_eus, eus_data[eus_data.len == l].sample(n)])
 
-esp_data = new_esp.sample(len(new_esp) - 6) # Making the size a round number
-eng_data = new_eng.sample(len(new_esp) - 6)
-eus_data = new_eus.sample(len(new_esp) - 6)
-
-print(esp_data.len.value_counts(sort=False))
-print(eng_data.len.value_counts(sort=False))
-print(eus_data.len.value_counts(sort=False))
+print(new_esp.len.value_counts(sort=False))
+print(new_eng.len.value_counts(sort=False))
+print(new_eus.len.value_counts(sort=False))
+print(new_nwd.len.value_counts(sort=False))
 
 # %% Select dev and test set sizes
 
-n = 128
+n = 82
 
 idx2 = n * 10
 idx3 = n * 10
 idx1 = len(esp_data) - idx2 - idx3
 
-esp_data = esp_data.sample(frac=1.) # Shuffle again
-eng_data = eng_data.sample(frac=1.)
-eus_data = eus_data.sample(frac=1.)
+esp_data = new_esp.sample(frac=1.) # Shuffle again
+eng_data = new_eng.sample(frac=1.)
+eus_data = new_eus.sample(frac=1.)
 
 # %% First dataset
 data = pd.DataFrame(columns=['data', 'label', 'freq', 'split'])
@@ -145,3 +162,12 @@ print(stats.ttest_ind(data[(data.split=='test') & (data.label=='ESP')].len,
 
 data.to_csv('ESP-EUS.csv',
             index=False, encoding='utf-8')
+
+#%% Lexical Decision Dataset
+LDT = pd.DataFrame(columns=['W1', 'W2', 'len'])
+LDT['W1'] = list(new_esp.data)
+LDT['W2'] = list(new_nwd.spelling)
+LDT['len'] = list(new_esp.len)
+
+LDT.to_csv('LDT.csv',
+           index=False, encoding='utf-8')

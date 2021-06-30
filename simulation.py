@@ -17,6 +17,7 @@ import torch.nn as nn
 import utils
 import torch
 import pandas as pd
+import numpy as np
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -35,16 +36,16 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=10,
+    n_runs=5,
     # Model hyperparameters
-    embedding_dim=32,
+    embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
-    drop_p=0.4,
+    drop_p=0.0,
     # Training hyperparameters
     n_epochs=50,
-    learning_rate=0.001,
-    batch_size=128,
+    learning_rate=2e-3,
+    batch_size=82,
     # Meta parameters
     acc_threshold=30,
     plotting=False,
@@ -58,9 +59,9 @@ utils.set_all_seeds(args.seed, args.device)
 # %% Model extension to predict category
 
 
-class LabelPredictor(nn.Module):
+class TaskSubsystem(nn.Module):
     def __init__(self, n_in, n_out):
-        super(LabelPredictor, self).__init__()
+        super(TaskSubsystem, self).__init__()
         self.fc = nn.Linear(n_in, n_out)
 
     def forward(self, x):
@@ -76,7 +77,7 @@ vectorizer = utils.Vectorizer.from_df(eval_words)
 
 mask_index = vectorizer.data_vocab.PAD_idx
 
-reps_per_block = 2
+reps_per_block = 1
 topk = 4
 
 
@@ -117,11 +118,11 @@ for data, category in zip(args.datafiles, args.modelfiles):
             exp_words['cat'] = range(48)
 
             model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_ldt_85.pt")
             model.to(args.device)
             model.train()
 
-            lp = LabelPredictor(args.hidden_dims, 48)
+            lp = TaskSubsystem(args.hidden_dims, 48)
             lp.to(args.device)
             lp.train()
 
@@ -164,9 +165,12 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         loss.backward()
                         optimizer.step()
 
-                        _, preds = torch.topk(
-                            F.log_softmax(out_cat, dim=0), k=topk)
-                        acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
+                        # _, preds = torch.topk(
+                        #     F.log_softmax(out_cat, dim=0), k=topk)
+                        # acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
+                        
+                        cat_prob = F.softmax(out_cat, dim=0).detach().to('cpu').numpy()
+                        cat_prob = cat_prob[cat]
 
                         res['dataset'].append(category)
                         res['prob'].append(end)
@@ -178,13 +182,13 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         res['trl'].append(tr+1)
                         res['loss'].append(loss.item())
                         res['type'].append('reco')
-                        res['acc'].append(acc_cat)
-                        res['response'].append('')
+                        res['acc'].append(cat_prob)
 
                     # Production task
                     exp_words = exp_words.sample(frac=1., replace=False)
                     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-                        idxs = []
+                        word_prob = 1
+                        loss = 0
                         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
                             optimizer_letters.zero_grad()
                             f_v, t_v = f_v.to(args.device), t_v.to(args.device)
@@ -195,19 +199,21 @@ for data, category in zip(args.datafiles, args.modelfiles):
                                                       hidden,
                                                       args.drop_p)
 
-                            loss = F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
-                                                   ignore_index=mask_index,
-                                                   reduction='sum')
+                            loss += F.cross_entropy(out_letters[-1].unsqueeze(0), t_v,
+                                                    ignore_index=mask_index,
+                                                    reduction='sum')
 
-                            loss.backward()
-                            optimizer_letters.step()
-
-                            _, idx = torch.max(
-                                F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
-                            idxs.append(idx.item())
-
-                        prod_word = vectorizer.decode(idxs)
-                        acc_letters = score_word(prod_word, word)
+                            # _, idx = torch.max(
+                            #     F.softmax(out_letters[-1].detach().to('cpu'), dim=0), 0)
+                            # idxs.append(idx.item())
+                        
+                            probs = F.softmax(out_letters[-1], dim=0).detach().to('cpu').numpy()
+                            word_prob *= probs[t_v.item()]
+                        
+                        loss.backward()
+                        optimizer_letters.step()
+                        # prod_word = vectorizer.decode(idxs)
+                        # acc_letters = score_word(prod_word, word)
 
                         res['dataset'].append(category)
                         res['prob'].append(end)
@@ -219,8 +225,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         res['trl'].append(tr+1)
                         res['loss'].append(loss.item())
                         res['type'].append('prod')
-                        res['acc'].append(acc_letters)
-                        res['response'].append(prod_word)
+                        res['acc'].append(word_prob)
 
             # Save a trained version of the model after the 5 blocks
             #torch.save(model, f'models/{m_name}/{m_name}_{run}_trained.pt')
@@ -232,5 +237,4 @@ res = pd.DataFrame(res)
 g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],
                 col='label', col_order=['ES-', 'ES+'], row='type', row_order=['reco', 'prod'],
                 data=res, kind='point', ci=99)
-g.set(ylim=(0, 100))
 plt.show()

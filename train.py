@@ -7,6 +7,7 @@ Created on Thu Oct  1 10:54:40 2020
 # %% Imports
 import os
 import utils
+import argparse
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -15,11 +16,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from cloudmodel import CLOUD
-from argparse import Namespace
 from datetime import datetime
 
 # %% Set-up paramenters
-args = Namespace(
+args = argparse.Namespace(
     # Path and data information
     csv='data/',
     model_save_file='models/',
@@ -27,29 +27,32 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=10,  # How many versions of the models to train
+    n_runs=5,  # How many versions of the models to train
     # Model hyperparameters
-    embedding_dim=32,
+    embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
-    drop_p=0.4,
+    drop_p=0.0,
     # Training hyperparameters
     n_epochs=50,
-    learning_rate=0.001,
-    batch_size=128,  # Selected based on train-val-test sizes
+    learning_rate=2e-3,
+    batch_size=82,  # Selected based on train-val-test sizes
     # Meta parameters
-    acc_threshold=30,
+    acc_threshold=65,
     plotting=False,
     print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-    seed=404
+    seed=404,
+    # LDT
+    run_ldt=True,
+    ldt_path='data/LDT.csv'
 )
 
 utils.set_all_seeds(args.seed, args.device)
 
 for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
-        # No need to run twice the monolingual versions
+        # No need to run the monolingual versions twice 
         if data == 'ESP-EUS.csv' and prob == args.probs[-1]:
             continue
 
@@ -62,6 +65,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         for run in range(args.n_runs):
             threshold = args.acc_threshold
             threshold_val = args.acc_threshold
+            threshold_ldt = args.acc_threshold
 
             m_name = f"{category}_{end}"
 
@@ -78,7 +82,6 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 n_embedd=args.embedding_dim,
                 n_hidden=args.hidden_dims,
                 n_layers=args.n_rnn_layers,
-                hidden_type=args.hidden_type,
                 pad_idx=mask_index
             ).to(args.device)
 
@@ -98,7 +101,8 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     print(f"Epoch: {it+1:03d} |",
                           f"Avg. train acc: {np.mean(train_state['train_acc'][-args.print_freq:]):.2f} |",
                           f"Avg. val acc L1: {np.mean(train_state['val_acc_l1'][-args.print_freq:]):.2f} |",
-                          f"Avg. val acc L2: {np.mean(train_state['val_acc_l2'][-args.print_freq:]):.2f}")
+                          f"Avg. val acc L2: {np.mean(train_state['val_acc_l2'][-args.print_freq:]):.2f}",
+                          f"Avg. LDT Score: {np.mean(train_state['LDT_score'][-args.print_freq:]):.2f}")
 
                 train_state['epoch_idx'] = it + 1
 
@@ -135,7 +139,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
                 train_state['train_loss'].append(running_loss)
                 train_state['train_acc'].append(running_acc)
-
+                
                 # EVAL
                 eval_loss_l1, eval_acc_l1 = utils.evaluate_model(
                     args, model, split='val_l1', dataset=dataset, mask_index=mask_index, max_length=vectorizer.max_length)
@@ -182,6 +186,23 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     torch.save(
                         model, f"{save_file}/{m_name}_{run}_threshold_val_{threshold_val}.pt")
                     threshold_val += 1
+                
+                if args.run_ldt:
+                    train_state['LDT_score'].append(utils.lexical_decision_task(args, model, vectorizer))
+                    if train_state['LDT_score'][-1] >= 90:
+                        print(
+                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_score'][-1]:.2f}")
+                        torch.save(
+                            model, f"{save_file}/{m_name}_{run}_threshold_ldt_90.pt")
+                        break
+                    if train_state['LDT_score'][-1] >= threshold_ldt:
+                        print(
+                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_score'][-1]:.2f}")
+                        torch.save(
+                            model, f"{save_file}/{m_name}_{run}_threshold_ldt_{threshold_ldt}.pt")
+                        threshold_ldt += 5
+                    
+
 
             # TEST
             test_loss_l1, test_acc_l1 = utils.evaluate_model(
