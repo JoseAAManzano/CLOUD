@@ -191,15 +191,15 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
                 if args.run_ldt:
                     train_state['LDT_train_score'].append(
-                        utils.lexical_decision_task(args, model, vectorizer, split='train'))
+                        utils.lexical_decision_task(args, model, vectorizer, split='train', log=True))
                     train_state['LDT_val_score'].append(
-                        utils.lexical_decision_task(args, model, vectorizer, split='val'))
-                    if train_state['LDT_train_score'][-1] >= 90:
-                        print(
-                            f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_train_score'][-1]:.2f}")
-                        torch.save(
-                            model, f"{save_file}/{m_name}_{run}_threshold_ldt_90.pt")
-                        break
+                        utils.lexical_decision_task(args, model, vectorizer, split='val', log=True))
+                    # if train_state['LDT_train_score'][-1] >= 90:
+                    #     print(
+                    #         f"LDT threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_train_score'][-1]:.2f}")
+                    #     torch.save(
+                    #         model, f"{save_file}/{m_name}_{run}_threshold_ldt_90.pt")
+                    #     break
                     if train_state['LDT_train_score'][-1] >= threshold_ldt:
                         print(
                             f"LDT train threshold {threshold_ldt} reached at epoch {it+1}: {train_state['LDT_train_score'][-1]:.2f}")
@@ -210,7 +210,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         print(
                             f"LDT val threshold {threshold_val_ldt} reached at epoch {it+1}: {train_state['LDT_val_score'][-1]:.2f}")
                         torch.save(
-                            model, f"{save_file}/{m_name}_{run}_threshold_val_ldt_{threshold_ldt}.pt")
+                            model, f"{save_file}/{m_name}_{run}_threshold_val_ldt_{threshold_val_ldt}.pt")
                         threshold_val_ldt += 5
 
             # TEST
@@ -227,7 +227,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
             if args.run_ldt:
                 train_state['LDT_test_score'] = utils.lexical_decision_task(
-                    args, model, vectorizer, split='test')
+                    args, model, vectorizer, split='test', log=True)
 
             train_state['run_time'] = f"{(datetime.now() - t0).seconds}s"
 

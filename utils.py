@@ -203,21 +203,21 @@ def get_single_probability(word, model, vectorizer, device, log=False):
 
         if log:
             probs = F.log_softmax(
-                out_letters[-1], dim=0).detach().to('cpu').numpy()
+                out_letters[-1][:-1], dim=0).detach().to('cpu').numpy()
             word_prob += probs[t_v.item()]
         else:
             probs = F.softmax(
-                out_letters[-1], dim=0).detach().to('cpu').numpy()
+                out_letters[-1][:-1], dim=0).detach().to('cpu').numpy()
             word_prob *= probs[t_v.item()]
 
     return word_prob
 
 
-def get_multiple_probabilities(batch_gen, model, vectorizer, device, batch_size, size):
+def get_multiple_probabilities(batch_gen, model, vectorizer, device, batch_size, size, log=False):
     model.to(device)
     model.eval()
 
-    probs = torch.zeros(size)
+    probs = torch.empty(size)
 
     for batch_id, batch_dict in enumerate(batch_gen):
         hidden = model.init_hidden(batch_size, device)
@@ -227,22 +227,28 @@ def get_multiple_probabilities(batch_gen, model, vectorizer, device, batch_size,
                                max_length=vectorizer.max_length)
         out = out.detach().view(batch_size, -1, 28).to('cpu')
 
-        dist = F.softmax(out[:, :, :-1], dim=-1)
+        if log:
+            dist = F.log_softmax(out[:,:,:-1], dim=-1)
+        else:
+            dist = F.softmax(out[:, :, :-1], dim=-1)
 
         for i, (tens, ln, t_v) in enumerate(zip(dist,
                                                 batch_dict['vector_length'].to(
                                                     'cpu'),
                                                 batch_dict['Y'].to('cpu'))):
             x = tens[:ln]
-            prob = 1
+            prob = 1 if not log else 0
             for let, idx in zip(x, t_v):
-                prob *= let[idx]
+                if log:
+                    prob += let[idx]
+                else:
+                    prob *= let[idx]
 
             probs[i+batch_id*batch_size] = prob
     return probs
 
 
-def lexical_decision_task(args, model, vectorizer, split='train'):
+def lexical_decision_task(args, model, vectorizer, split='train', log=False, return_probs=False):
     ldt = pd.read_csv(args.ldt_path)
     try:
         ldt = ldt[ldt.split == split]
@@ -263,7 +269,7 @@ def lexical_decision_task(args, model, vectorizer, split='train'):
                                  drop_last=False, device=args.device)
 
     word_probs = get_multiple_probabilities(batch_gen, model, vectorizer, args.device,
-                                            batch_size, len(w1))
+                                            batch_size, len(w1), log=log)
 
     nonwords = pd.DataFrame(columns=['data'])
     nonwords['data'] = w2
@@ -273,9 +279,12 @@ def lexical_decision_task(args, model, vectorizer, split='train'):
                                  drop_last=False, device=args.device)
 
     nonword_probs = get_multiple_probabilities(batch_gen, model, vectorizer, args.device,
-                                               batch_size, len(w2))
+                                               batch_size, len(w2), log=log)
 
-    return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100
+    if return_probs:
+        return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100, word_probs, nonword_probs
+    else:
+        return (torch.sum(word_probs > nonword_probs).item() / len(w1)) * 100
 
 
 def get_distribution_from_context(model, context, vectorizer, device='cpu'):
