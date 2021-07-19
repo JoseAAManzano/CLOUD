@@ -33,6 +33,9 @@ class CLOUD(nn.Module):
         self.n_layers = n_layers
         self.char_vocab_size = char_vocab_size
         self.pad_idx = pad_idx
+        
+        assert n_embedd >= 1
+        
         self.n_embedd = n_embedd
 
         if self.n_embedd > 1:

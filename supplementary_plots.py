@@ -48,13 +48,13 @@ args = Namespace(
     probs=[60, 100],
     n_runs=10,
     # Model hyperparameters
-    embedding_dim=32,
+    embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
-    drop_p=0.4,
+    drop_p=0.0,
     # Training hyperparameters
     n_epochs=50,
-    learning_rate=0.001,
+    learning_rate=2e-3,
     batch_size=128,
     # Meta parameters
     acc_threshold=30,

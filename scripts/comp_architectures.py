@@ -31,10 +31,10 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN'],
     probs=[100],
-    n_runs=5,  # How many versions of the models to train
+    n_runs=1,  # How many versions of the models to train
     # Model hyperparameters
-    embedding_dim=32,
-    hidden_dims=[32, 64, 128, 256, 512],
+    embedding_dim=[1, 8, 16, 32],
+    hidden_dims=[32, 64, 128, 256],
     n_rnn_layers=1,
     drop_p=0.4,
     # Training hyperparameters

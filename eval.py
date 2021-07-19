@@ -31,6 +31,8 @@ pd.options.mode.chained_assignment = None  # default='warn'
 sns.set(style='whitegrid', context='paper', palette='Greys', font_scale=1.5)
 
 
+palette = ["#27AAE1", "#074C7A", "#666666"]
+
 # %% Set-up paramenters
 args = Namespace(
     # Path and data information
@@ -40,26 +42,29 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=10,
+    n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
-    embedding_dim=32,
+    embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
-    drop_p=0.4,
+    drop_p=0.0,
     # Training hyperparameters
-    n_epochs=50,
-    learning_rate=0.001,
-    batch_size=128,
+    n_epochs=100,
+    learning_rate=2e-3,
+    batch_size=82,  # Selected based on train-val-test sizes
     # Meta parameters
-    acc_threshold=30,
+    acc_threshold=65,
     plotting=False,
     print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
     seed=404,
+    # LDT
+    run_ldt=True,
     ldt_path='data/LDT.csv'
 )
 
 utils.set_all_seeds(args.seed, args.device)
+
 
 # %% Util functions
 
@@ -71,7 +76,7 @@ def print_from(df, col, d1_l, d1_h, d2_l, d2_h):
 
 # %% PLOTS FOR FIGURE 1
 
-model_file = 'models/ESEN_100-00/ESEN_100-00_0_threshold_ldt_85.pt'
+model_file = 'models/ESEN_60-40/ESEN_60-40_3_threshold_ldt_85.pt'
 dataset = pd.read_csv('data/ESP-ENG.csv')
 vectorizer = utils.Vectorizer.from_df(dataset)
 word = 'model'
@@ -83,7 +88,7 @@ model.eval()
 utils.set_all_seeds(args.seed, 'cpu')
 
 # %% Plot character probabilities
-letters = list(ascii_lowercase) + ['<s>', '</s>']
+letters = list(ascii_lowercase) + ['#']
 top_k = 5
 tmp = np.zeros((top_k, len(word)+1))
 annot = [['' for _ in range(len(word)+1)] for _ in range(top_k)]
@@ -111,14 +116,15 @@ for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
         annot[j][i] = f"{letters[argsort_probs[j]].upper()}\n\n{sorted_probs[j]:.2f}"
 
 plt.figure(figsize=(8, 6))
-sns.heatmap(data=tmp, cmap='Blues', annot=annot, fmt='',
-            xticklabels=list(word.upper()) + ['</s>'],
+ax = sns.heatmap(data=tmp, cmap='Blues', annot=annot, fmt='',
+            xticklabels=list(word.upper()) + ['#'],
+            cbar_kws=dict(use_gridspec=False,location="left"),
             vmin=0., vmax=0.6)
+ax.set(xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)
+plt.show()
+
 
 # %% Plot word CLOUD
-sns.set(style='whitegrid', context='paper',
-        palette='colorblind', font_scale=1.5)
-
 hidd_cols = [f"hid_{i+1}" for i in range(model.rnn.hidden_size)]
 
 hidden_file = model_file.split('/')[-1].split('.')[0]
@@ -180,6 +186,7 @@ df[hidd_cols] = StandardScaler().fit_transform(df[hidd_cols].values)
 
 # Compress hidden representations for plotting using PCA and TSNE
 print('Reducing the dimensionality for plotting. This will take a while.')
+
 pca = PCA(n_components=50)
 
 pca_res = pca.fit_transform(df[hidd_cols])
@@ -188,18 +195,20 @@ tsne = TSNE(n_components=2, perplexity=100, n_jobs=-1, random_state=args.seed)
 
 df[['dim1', 'dim2']] = tsne.fit_transform(pca_res)
 
-del pca_res, tmp
+df['Language'] = df.Language.map({'ES':'SP','EN':'EN'})
 
 # Plot the entire dataset
+sns.set(style='white')
 ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
-                   hue='Language', hue_order=['ES', 'EN'],
-                   data=df, alpha=0.8, space=0.1, palette='colorblind',
-                   xlim=(-70, 70), ylim=(-70, 70), s=2, markers=['o', 'x'])
+                   hue='Language', hue_order=['SP', 'EN'],
+                   data=df, alpha=0.8, space=0.2, palette=["#666666", "#27AAE1"],
+                   xlim=(-80, 80), ylim=(-80, 80), s=2, markers=['o', 'x'])
+ax.ax_joint.set(xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)
 plt.show()
 
-list1 = [x for x in list(print_from(df, 'Word', 0, 20, 40, 60)) if len(x) < 6]
+list1 = [x for x in list(print_from(df, 'Word', 35, 45, 30, 40)) if len(x) < 6]
 list2 = [x for x in list(print_from(
-    df, 'Word', -60, -45, -20, 15)) if len(x) < 7]
+    df, 'Word', -60, -40, -20, 5)) if len(x) < 7]
 
 # Compute the distance from all words to the selected word
 print("Computing similarity")
@@ -217,11 +226,10 @@ for i, row in df.iterrows():
 df['dist'] = dists
 
 # Get most similar and dissimilar words
-top = df.sort_values(by='dist', ascending=False)[:21]
-
+top = df.sort_values(by='dist', ascending=False)[:16]
 
 def jitter(df, col):
-    return df[col] + np.random.randn(len(df)) * (0.5 * (max(df[col]) - min(df[col])))
+    return df[col] + np.random.randn(len(df)) * (1 * (max(df[col]) - min(df[col])))
 
 
 top['dim2_j'] = jitter(top, 'dim2')
@@ -239,14 +247,13 @@ def label_points(x, y, val, ax):
                     str(point['val']), fontsize=20)
 
 
-sns.set(style='white', context='paper', palette='colorblind', font_scale=1.5)
-
 plt.figure(figsize=(7, 5))
-ax = sns.scatterplot(x='dim1_j', y='dim2_j', hue=top.Language.tolist(), palette=['C1', 'C0'], data=top,
-                     hue_order=['ES', 'EN'], s=35)
+ax = sns.scatterplot(x='dim1_j', y='dim2_j', hue=top.Language.tolist(), palette=["#666666", "#27AAE1"], data=top,
+                     hue_order=['SP', 'EN'], s=35)
+ax.set(xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)
 sns.despine()
 label_points(top['dim1_j'], top['dim2_j'], top.Word, ax)
-ax.legend(loc='lower left')
+ax.legend(loc='upper right')
 plt.show()
 
 
@@ -254,7 +261,6 @@ plt.show()
 
 # Model comparison
 tmp = defaultdict(list)
-splits = ['val_l1', 'val_l2', 'test_l1', 'test_l2']
 for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
         end = f"{prob:02}-{100-prob:02}"
@@ -268,67 +274,75 @@ for data, category in zip(args.datafiles, args.modelfiles):
             if "100-00" in m_name:
                 cat = 'MONO'
             elif "ESEN" in m_name:
-                cat = 'ES-EN'
+                cat = 'SP-EN'
             else:
-                cat = 'ES-EU'
+                cat = 'SP-BQ'
 
             model_file = args.model_save_file + \
-                f"{m_name}/{m_name}_{run}_threshold_val_35.pt"
+                f"{m_name}/{m_name}_{run}_threshold_ldt_85.pt"
             print(f"\nSave file: {data}: {model_file}\n")
 
             model = torch.load(model_file)
             model.eval()
 
-            for dt in args.datafiles:
-                print(dt)
-                df = pd.read_csv(args.csv + dt)
-                vectorizer = utils.Vectorizer.from_df(df)
-                mask_index = vectorizer.data_vocab.PAD_idx
+            df = pd.read_csv(args.csv + data)
+            vectorizer = utils.Vectorizer.from_df(df)
 
-                labels = dt.split('.')[0].split('-')
-
-                # Set-up dataset, vectorizer, and model
-                dataset = utils.TextDataset.make_text_dataset(df, vectorizer,
-                                                              p=prob/100,
-                                                              labels=labels)
-
-                for split in splits:
-                    eval_loss, eval_acc = utils.evaluate_model(
-                        args, model, split=split, dataset=dataset, mask_index=mask_index, max_length=vectorizer.max_length)
-
-                    tmp['category'].append(category)
-                    tmp['run'].append(run)
-                    tmp['dataset'].append(dt)
-                    tmp['Split'].append(split)
-                    tmp['Version'].append(cat)
-                    tmp['loss'].append(eval_loss)
-                    tmp['Accuracy'].append(eval_acc)
+            train_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                              split='train', log=True)
+            val_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                              split='val', log=True)
+            test_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                              split='test', log=True)
+            tmp['Group'].append(category)
+            tmp['run'].append(run)
+            tmp['Version'].append(cat)
+            tmp['Train_Accuracy'].append(train_acc)
+            tmp['Test_Accuracy'].append((val_acc + test_acc)/2)
 
 res = pd.DataFrame(tmp)
 
-mc = res
+# mc = res
 
-langs = [x[-2:].upper() + "_" + y.split('.')[0].split('-')[1]
-         for x, y in zip(mc['Split'], mc['dataset'])]
+# langs = [x[-2:].upper() + "_" + y.split('.')[0].split('-')[1]
+#          for x, y in zip(mc['Split'], mc['dataset'])]
 
-mc['lang'] = langs
-mc['Set'] = mc['Split'].map(lambda x: x[:-3].upper())
+# mc['lang'] = langs
+# mc['Set'] = mc['Split'].map(lambda x: x[:-3].upper())
 
-mc = mc[mc.lang != 'L1_EUS']
-mc['Language'] = mc['lang'].map({'L1_ENG': 'Spanish (ES)',
-                                 'L2_ENG': 'English (EN)',
-                                 'L2_EUS': 'Basque (EU)'})
+# mc = mc[mc.lang != 'L1_EUS']
+# mc['Language'] = mc['lang'].map({'L1_ENG': 'Spanish (ES)',
+#                                  'L2_ENG': 'English (EN)',
+#                                  'L2_EUS': 'Basque (EU)'})
 
-#mc.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
+res.to_csv('results/model_comparison.csv', index=False, encoding='utf-8')
 
-# Model comparison plot
-mc = pd.read_csv('results/model_comparison.csv')
+# Calculate empirical chance-score
+from cloudmodel import CLOUD
 
-plt.figure(figsize=(6, 9))
-ax = sns.catplot(data=mc, x='Set', y='Accuracy', hue='Version',
-                 hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                 col='Language', kind='bar', ci=99)
-plt.show()
+emp_train = []
+emp_test = []
+for i in range(20):
+    print(i)
+    model = CLOUD(
+                char_vocab_size=len(vectorizer.data_vocab),
+                n_embedd=args.embedding_dim,
+                n_hidden=args.hidden_dims,
+                n_layers=args.n_rnn_layers,
+                pad_idx=vectorizer.data_vocab.PAD_idx
+            )
+    
+    train_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                      split='train', log=True)
+    val_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                      split='val', log=True)
+    test_acc = utils.lexical_decision_task(args, model, vectorizer,
+                                      split='test', log=True)
+    emp_train.append(train_acc)
+    emp_test.append((val_acc + test_acc)/2)
+    
+print(np.mean(emp_train), np.std(emp_train))
+print(np.mean(emp_test), np.std(emp_test))
 
 
 # %% PLOTS FOR NEW FIGURE 2
@@ -362,6 +376,12 @@ def pred_scores(X_train, X_test, y_train, y_test, clf, metrics):
             tmp[met] = func(y_test, preds, average='weighted')
         else:
             tmp[met] = func(y_test, preds)
+    
+    prob_corr = 0
+    pred_proba = clf.predict_proba(X_test)
+    for i, l in enumerate(y_test):
+        prob_corr += pred_proba[i, l]
+    tmp['Probability'] = prob_corr/len(X_test)
     return tmp
 
 
@@ -407,12 +427,12 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 grp = ''
                 if category == 'ESEN':
                     if end == '60-40':
-                        grp = 'ES-EN'
+                        grp = 'SP-EN'
                     else:
                         grp = 'MONO'
                 else:
                     if end == '60-40':
-                        grp = 'ES-EU'
+                        grp = 'SP-BQ'
                     else:
 
                         grp = 'MONO'
@@ -428,46 +448,45 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
 res = pd.DataFrame(res)
 
-#res.to_csv('results/backup_readout_prediction.csv', index=False, encoding='utf-8')
+res.to_csv('results/backup_readout_prediction.csv', index=False, encoding='utf-8')
 
 # Plots
-readout = pd.read_csv(
-    'results/backup_readout_prediction.csv', encoding='utf-8')
-readout['Version'] = readout.group
-readout['AUROC'] = readout['ROC_AUC']
+res['Version'] = res.group
 
-pivot_esen = readout[readout.dataset == 'ESEN'].pivot_table(index=['run', 'char'],
+pivot_esen = res[res.dataset == 'ESEN'].pivot_table(index=['run', 'char'],
                                                             columns='Version',
-                                                            values='AUROC').reset_index()
-for ch in range(readout.char.max() + 1):
+                                                            values='Probability').reset_index()
+for ch in range(res.char.max() + 1):
     tmp = pivot_esen[pivot_esen.char == ch]
-    _, pval = ttest_ind(tmp['ES-EN'], tmp['MONO'])
+    _, pval = ttest_ind(tmp['SP-EN'], tmp['MONO'])
     st = '*' if pval < 0.05/11 else 'n.s.'
-    print(f"ES-EN-{ch}: {st}")
+    print(f"SP-EN-{ch}: {st} {pval*11:.5f}")
 
-pivot_eseu = readout[readout.dataset == 'ESEU'].pivot_table(index=['run', 'char'],
+pivot_eseu = res[res.dataset == 'ESEU'].pivot_table(index=['run', 'char'],
                                                             columns='Version',
-                                                            values='AUROC').reset_index()
-for ch in range(readout.char.max() + 1):
+                                                            values='Probability').reset_index()
+for ch in range(res.char.max() + 1):
     tmp = pivot_eseu[pivot_eseu.char == ch]
-    _, pval = ttest_ind(tmp['ES-EU'], tmp['MONO'])
+    _, pval = ttest_ind(tmp['SP-BQ'], tmp['MONO'])
     st = '*' if pval < 0.05/11 else 'n.s.'
-    print(f"ES-EU-{ch}: {st}")
+    print(f"ES-EU-{ch}: {st} {pval*11:.5f}")
 
-sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=2)
+sns.set(style='white', font_scale=1.2)
 
-g = sns.catplot(x='char', y='AUROC', hue='Version', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                col='dataset', palette=['C1', 'C0', 'C2'], markers=['o', 'x', '*'],
-                data=readout, kind='point', ci=99, scale=1.2)
-g.set(ylim=(0.49, 1.))
-g.axes.flatten()[0].fill([2.5, 8.5, 8.5, 2.5], [
-    0.4, 0.4, 1, 1], 'k', alpha=0.2)
-g.axes.flatten()[0].fill([9.5, 10.5, 10.5, 9.5],
-                         [0.4, 0.4, 1, 1], 'k', alpha=0.2)
-g.axes.flatten()[0].set_ylabel('AUROC \u00B1 99% CI')
-g.axes.flatten()[1].fill([2.5, 10.5, 10.5, 2.5],
-                         [0.4, 0.4, 1, 1], 'k', alpha=0.2)
-g.axes.flatten()[0].set_title('Spanish-English')
-g.axes.flatten()[1].set_title('Spanish-Basque')
+g = sns.catplot(x='char', y='Probability', hue='Version', hue_order=['SP-EN', 'SP-BQ', 'MONO'],
+                col='dataset', palette=["#27AAE1", "#074C7A", "#666666"], markers=['o', 'x', '*'],
+                data=res, kind='point', ci=99, scale=1.2)
+g.set(ylim=(0.48, 1.))
 g.axes.flatten()[0].set_xlabel('Character (time-step)')
 g.axes.flatten()[1].set_xlabel('Character (time-step)')
+g.axes.flatten()[0].set_title('Spanish-English')
+g.axes.flatten()[1].set_title('Spanish-Basque')
+g.axes.flatten()[0].set_ylabel('Probability Correct \u00B1 95% CI')
+g.axes.flatten()[0].axhline(0.5, color='k', linestyle='--', lw=3)
+g.axes.flatten()[1].axhline(0.5, color='k', linestyle='--', lw=3)
+g.axes.flatten()[0].fill([2.5, 10.5, 10.5, 2.5], [0.4, 0.4, 1, 1], 'k', alpha=0.2)
+
+g.axes.flatten()[1].fill([2.5, 10.5, 10.5, 2.5],
+                         [0.4, 0.4, 1, 1], 'k', alpha=0.2)
+
+

@@ -71,6 +71,8 @@ nwd = nwd[~(nwd.spelling.isin(esp.spelling))]
 nwd = nwd[~(nwd.spelling.isin(eng.spelling))]
 nwd = nwd[~(nwd.spelling.isin(eus.spelling))]
 
+esp.to_csv('ESP_PROP.csv', index=False, encoding='utf-8')
+
 cols = ['data', 'freq']
 
 esp_data = esp[['spelling', 'zipf']]

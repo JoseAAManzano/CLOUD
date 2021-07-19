@@ -27,20 +27,23 @@ args = Namespace(
     probs=[60, 100],
     n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
-    embedding_dim=32,
+    embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
-    drop_p=0.4,
+    drop_p=0.0,
     # Training hyperparameters
-    n_epochs=50,
-    learning_rate=0.001,
-    batch_size=128,  # Selected based on train-dev-test sizes
+    n_epochs=100,
+    learning_rate=2e-3,
+    batch_size=82,  # Selected based on train-val-test sizes
     # Meta parameters
-    acc_threshold=30,
+    acc_threshold=65,
     plotting=False,
     print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-    seed=404
+    seed=404,
+    # LDT
+    run_ldt=True,
+    ldt_path='data/LDT.csv'
 )
 
 utils.set_all_seeds(args.seed, args.device)
@@ -74,7 +77,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
             hidd = defaultdict(list)
 
             model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_ldt_85.pt")
             model.to('cpu')
             model.eval()
 

@@ -34,7 +34,7 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=5,
+    n_runs=10,
     # Model hyperparameters
     embedding_dim=16,
     hidden_dims=128,
@@ -98,9 +98,9 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
         if prob == args.probs[0]:
             if category == 'ESEN':
-                grp = 'ES-EN'
+                grp = 'SP-EN'
             else:
-                grp = 'ES-EU'
+                grp = 'SP-BQ'
         else:
             grp = 'MONO'
 
@@ -111,79 +111,79 @@ for data, category in zip(args.datafiles, args.modelfiles):
             exp_words = exp_words.sample(frac=1., replace=False)
             exp_words['cat'] = range(48)
 
-            # RECOGNITION TASK
+            #RECOGNITION TASK
+            model = torch.load(args.model_save_file +
+                                f"{m_name}/{m_name}_{run}_{threshold}.pt")
+            model.to(args.device)
+            model.train()
+
+            lp = TaskSubsystem(args.hidden_dims, 48)
+            lp.to(args.device)
+            lp.train()
+
+            optimizer = torch.optim.Adam(
+                lp.parameters(),
+                lr=args.learning_rate)
+            
+            optimizer_letters = torch.optim.Adam(
+                model.parameters(),
+                lr=args.learning_rate)
+            
+            for it in range(6):
+                exp_words = exp_words.sample(frac=1., replace=False)
+                for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
+                    optimizer.zero_grad()
+                    rep = torch.zeros(args.hidden_dims).to(args.device)
+                    for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
+                        f_v, t_v = f_v.to(args.device), t_v.to(args.device)
+                        hidden = model.init_hidden(1, args.device)
+
+                        _, out_rnn, _ = model(f_v.unsqueeze(0),
+                                                torch.LongTensor([i+1]),
+                                                hidden,
+                                                args.drop_p)
+
+                        rep += torch.flatten(out_rnn.squeeze(0)[-1])
+
+                    rep /= i+1
+
+                    out_cat = lp(rep)
+
+                    target = torch.LongTensor([cat]).to(args.device)
+
+                    loss = F.cross_entropy(
+                        out_cat.unsqueeze(0), target, reduction='sum')
+
+                    loss.backward()
+                    optimizer.step()
+
+                    # _, preds = torch.topk(
+                    #     F.log_softmax(out_cat, dim=0), k=topk)
+                    # acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
+
+                    cat_prob = F.softmax(
+                        out_cat, dim=0).detach().to('cpu').numpy()
+                    cat_prob = cat_prob[cat]
+
+                    res['dataset'].append(category)
+                    res['prob'].append(end)
+                    res['run'].append(run)
+                    res['word'].append(word)
+                    res['Group'].append(grp)
+                    res['label'].append(lab)
+                    res['block'].append(it)
+                    res['loss'].append(loss.item())
+                    res['type'].append('reco')
+                    res['acc'].append(cat_prob)
+                    res['acc_log'].append(np.log(cat_prob))
+            
+            # PRODUCTION TASK
             # model = torch.load(args.model_save_file +
             #                    f"{m_name}/{m_name}_{run}_{threshold}.pt")
             # model.to(args.device)
             # model.train()
 
-            # lp = TaskSubsystem(args.hidden_dims, 48)
-            # lp.to(args.device)
-            # lp.train()
-
-            # optimizer = torch.optim.Adam(
-            #     lp.parameters(),
-            #     lr=args.learning_rate)
-
-            # for it in range(5):
-            #     exp_words = exp_words.sample(frac=1., replace=False)
-            #     for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
-            #         optimizer.zero_grad()
-            #         rep = torch.zeros(args.hidden_dims).to(args.device)
-            #         for i, (f_v, t_v) in vectorizer.vectorize_single_char(word):
-            #             f_v, t_v = f_v.to(args.device), t_v.to(args.device)
-            #             hidden = model.init_hidden(1, args.device)
-
-            #             _, out_rnn, _ = model(f_v.unsqueeze(0),
-            #                                     torch.LongTensor([i+1]),
-            #                                     hidden,
-            #                                     args.drop_p)
-
-            #             rep += torch.flatten(out_rnn.squeeze(0)[-1])
-
-            #         rep /= i+1
-
-            #         out_cat = lp(rep)
-
-            #         target = torch.LongTensor([cat]).to(args.device)
-
-            #         loss = F.cross_entropy(
-            #             out_cat.unsqueeze(0), target, reduction='sum')
-
-            #         loss.backward()
-            #         optimizer.step()
-
-            #         # _, preds = torch.topk(
-            #         #     F.log_softmax(out_cat, dim=0), k=topk)
-            #         # acc_cat = ((cat in preds.to('cpu').numpy()) * 100)
-
-            #         cat_prob = F.softmax(
-            #             out_cat, dim=0).detach().to('cpu').numpy()
-            #         cat_prob = cat_prob[cat]
-
-            #         res['dataset'].append(category)
-            #         res['prob'].append(end)
-            #         res['run'].append(run)
-            #         res['word'].append(word)
-            #         res['Group'].append(grp)
-            #         res['label'].append(lab)
-            #         res['block'].append(it + 1)
-            #         res['trl'].append(tr+1)
-            #         res['loss'].append(loss.item())
-            #         res['type'].append('reco')
-            #         res['acc'].append(cat_prob)
-            
-            # PRODUCTION TASK
-            model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_{threshold}.pt")
-            model.to(args.device)
-            model.train()
-
-            optimizer_letters = torch.optim.Adam(
-                model.parameters(),
-                lr=args.learning_rate)
-
-            for it in range(5):
+            for it in range(6):
                 exp_words = exp_words.sample(frac=1., replace=False)
                 for word, cat, lab in zip(exp_words.data, exp_words.cat, exp_words.label):
                     word_prob = 1
@@ -221,19 +221,27 @@ for data, category in zip(args.datafiles, args.modelfiles):
                     res['word'].append(word)
                     res['Group'].append(grp)
                     res['label'].append(lab)
-                    res['block'].append(it + 1)
+                    res['block'].append(it)
                     res['loss'].append(loss.item())
                     res['type'].append('prod')
                     res['acc'].append(word_prob)
+                    res['acc_log'].append(np.log(word_prob))
 
             # Save a trained version of the model after the 5 blocks
             #torch.save(model, f'models/{m_name}/{m_name}_{run}_trained.pt')
 
 res = pd.DataFrame(res)
 
-#res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
+res.to_csv('results/simulation_results.csv', index=False, encoding='utf-8')
 
-g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['MONO', 'ES-EN', 'ES-EU'],
+g = sns.catplot(x='block', y='acc', hue='Group', hue_order=['SP-EN', 'SP-BQ', 'MONO'],
+                palette=["#27AAE1", "#074C7A", "#666666"],
                 col='label', col_order=['ES-', 'ES+'], #row='type', row_order=['reco', 'prod'],
-                data=res, kind='point', ci=99)
+                data=res[(res.type == 'reco') & (res.block > 0)], kind='point', ci=95)
+plt.show()
+
+g = sns.catplot(x='block', y='acc_log', hue='Group', hue_order=['SP-EN', 'SP-BQ', 'MONO'],
+                palette=["#27AAE1", "#074C7A", "#666666"],
+                col='label', col_order=['ES-', 'ES+'], #row='type', row_order=['reco', 'prod'],
+                data=res[(res.type == 'prod') & (res.block > 0)], kind='point', ci=95)
 plt.show()
