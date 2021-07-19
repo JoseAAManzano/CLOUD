@@ -33,7 +33,7 @@ pd.options.mode.chained_assignment = None  # default='warn'
 
 
 # Plotting
-sns.set(style='whitegrid', context='paper',
+sns.set(style='white', context='paper',
         palette='colorblind', font_scale=1.5)
 
 
@@ -46,26 +46,28 @@ args = Namespace(
     # Simulation parameters
     modelfiles=['ESEN', 'ESEU'],
     probs=[60, 100],
-    n_runs=10,
+    n_runs=10,  # How many versions of the models to train
     # Model hyperparameters
     embedding_dim=16,
     hidden_dims=128,
     n_rnn_layers=1,
     drop_p=0.0,
     # Training hyperparameters
-    n_epochs=50,
+    n_epochs=100,
     learning_rate=2e-3,
-    batch_size=128,
+    batch_size=82,  # Selected based on train-val-test sizes
     # Meta parameters
-    acc_threshold=30,
+    acc_threshold=65,
     plotting=False,
     print_freq=10,
     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-    seed=404
+    seed=404,
+    # LDT
+    run_ldt=True,
+    ldt_path='data/LDT.csv'
 )
 
 utils.set_all_seeds(args.seed, args.device)
-
 
 # %% SUPPLEMENTARY FIGURE 2
 
@@ -98,6 +100,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         df = pd.pivot_table(val_dataset, index=['word', 'len', 'label', 'run'], values=hidd_cols,
                             aggfunc=np.mean).reset_index()
         df.loc[:, 'Language'] = df.label.apply(lambda x: x[:-1])
+        df['Language'] = df.Language.map({'ES':'SP', 'EU': 'BQ', 'EN': 'EN'})
         df = df.sort_values(by=['Language', 'len'])
 
         for run in range(args.n_runs):
@@ -122,7 +125,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         grp = 'MONO'
                 similarities['Version'].append(grp)
                 similarities['run'].append(run)
-                l = 'L1' if ln == 'ES' else 'L2'
+                l = 'L1' if ln == 'SP' else 'L2'
                 similarities['Language'].append(l)
                 similarities['Type'].append('Within')
                 similarities['avg_dist'].append(np.triu(D, 1).mean())
@@ -166,11 +169,11 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 tmp.loc[:, ['dim1', 'dim2']] = tsne.fit_transform(pca_res)
 
                 if category == 'ESEN':
-                    palette = ['C1', 'C0']
-                    hue_order = ['ES', 'EN']
+                    palette = ["#666666","#27AAE1"]
+                    hue_order = ['SP', 'EN']
                 else:
-                    palette = ['C1', 'C2']
-                    hue_order = ['ES', 'EU']
+                    palette = ["#666666", "#074C7A"]
+                    hue_order = ['SP', 'BQ']
 
                 ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
                                    hue='Language', hue_order=hue_order, palette=palette,
@@ -200,7 +203,7 @@ plt.show()
 #similarities.to_csv('results/backup_supplementary_similarities.csv', index=False, encoding='utf-8')
 
 # %% SUPPLEMENTARY FIGURE 3
-sns.set(style='whitegrid', context='paper',
+sns.set(style='white', context='paper',
         palette='colorblind', font_scale=1.5)
 
 # Similarity of Flavian representations to each language
@@ -268,7 +271,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         hidd_repr = defaultdict(list)
         for run in range(args.n_runs):
             model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_threshold_val_35.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_ldt_85.pt")
             model.to('cpu')
             model.eval()
 
@@ -299,7 +302,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         hidd_repr = defaultdict(list)
         for run in range(args.n_runs):
             model = torch.load(args.model_save_file +
-                               f"{m_name}/{m_name}_{run}_trained.pt")
+                               f"{m_name}/{m_name}_{run}_threshold_ldt_85_trained.pt")
             model.to('cpu')
             model.eval()
 
@@ -327,7 +330,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
         df_trained = pd.concat(
             [df_trained, pd.DataFrame(hidd_repr)], axis=0, ignore_index=True)
 
-        mappings = {'ES': 'ES', 'EN': 'L2',
+        mappings = {'ES': 'SP', 'EN': 'L2',
                     'EU': 'L2', 'ES+': 'ES+', 'ES-': 'ES-'}
         df['Language'] = df.Language.map(mappings)
         df_trained['Language'] = df_trained.Language.map(mappings)
@@ -339,7 +342,7 @@ for data, category in zip(args.datafiles, args.modelfiles):
             for run in range(args.n_runs):
                 tmp = data_df[data_df.run == run]
 
-                l1 = tmp[tmp.Language == 'ES']
+                l1 = tmp[tmp.Language == 'SP']
                 l2 = tmp[tmp.Language == 'L2']
                 esp = tmp[tmp.Language == 'ES+']
                 esm = tmp[tmp.Language == 'ES-']
@@ -354,12 +357,12 @@ for data, category in zip(args.datafiles, args.modelfiles):
                 grp = ''
                 if category == 'ESEN':
                     if end == '60-40':
-                        grp = 'ES-EN'
+                        grp = 'SP-EN'
                     else:
                         grp = 'MONO'
                 else:
                     if end == '60-40':
-                        grp = 'ES-EU'
+                        grp = 'SP-BQ'
                     else:
                         grp = 'MONO'
 
@@ -397,12 +400,12 @@ for data, category in zip(args.datafiles, args.modelfiles):
                         else:
                             explore_df = tmp
 
-                        b = tmp[(tmp.Language == 'ES') |
+                        b = tmp[(tmp.Language == 'SP') |
                                 (tmp.Language == 'L2')]
 
                         ax = sns.jointplot(x='dim1', y='dim2', kind='scatter',
-                                           hue='Language', hue_order=['ES', 'L2'],
-                                           palette=['C1', 'C0'], data=b, alpha=0.5,
+                                           hue='Language', hue_order=['SP', 'L2'],
+                                           palette=["#666666","#27AAE1"], data=b, alpha=0.5,
                                            space=0.1, xlim=(-70, 70),
                                            ylim=(-70, 70), s=15)
                         ax.fig.suptitle(f"{m_name}_{data_label}")
@@ -424,11 +427,10 @@ for data, category in zip(args.datafiles, args.modelfiles):
 
 simil = pd.DataFrame(similarities)
 
-sns.set(style='whitegrid', context='paper', palette='colorblind', font_scale=2)
+sns.set(style='white', context='paper', palette='colorblind', font_scale=2)
 
-g = sns.catplot(x='Type', y='avg_dist',  # hue='Version', hue_order=['MONO', 'ES-EN', 'ES-EU'],
-                #palette=['C1', 'C0', 'C2'],
-                palette='Greys',
+g = sns.catplot(x='Type', y='avg_dist',  hue='Version', hue_order=['SP-EN', 'SP-BQ', 'MONO'],
+                palette=["#27AAE1", "#074C7A", "#666666"],
                 col='Training', col_order=['Untrained', 'Trained'],
                 data=simil, kind='violin', inner='point')
 g.axes.flatten()[0].set_ylabel('Avg. Cosine Similarity')

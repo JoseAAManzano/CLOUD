@@ -62,6 +62,9 @@ for data, category in zip(args.datafiles, args.modelfiles):
     for prob in args.probs:
         end = f"{prob:02}-{100-prob:02}"
         m_name = f"{category}_{end}"
+        
+        # if prob == 100 and category == 'ESEU':
+        #     continue
 
         df = pd.read_csv(f'data/{data}')
         vectorizer = utils.Vectorizer.from_df(df)
