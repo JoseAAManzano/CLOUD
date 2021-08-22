@@ -199,7 +199,7 @@ Project Link: [https://github.com/your_username/repo_name](https://github.com/yo
 [contributors-url]: https://github.com/JoseAAManzano/CLOUD/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=for-the-badge
 [forks-url]: https://github.com/JoseAAManzano/CLOUDnetwork/members
-[issues-shield]: https://img.shields.io/github/issues/othneildrew/Best-README-Template.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/JoseAAManzano/CLOUD
 [issues-url]: https://github.com/JoseAAManzano/CLOUD/issues
 [license-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
 [license-url]: https://github.com/othneildrew/Best-README-Template/blob/master/LICENSE.txt
