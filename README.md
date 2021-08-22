@@ -159,9 +159,7 @@ Aguasvivas, Jose A., Alberto Testolin, Marco Zorzi, and Manuel Carreiras. 2021. 
 * [Img Shields](https://shields.io)
 * [Choose an Open Source License](https://choosealicense.com)
 * [EMBO Short-Term Fellowship](https://www.embo.org/funding/)
-
-
-
+* [Logo based on design by iconixar from flaticon.com](https://www.flaticon.com/)
 
 
 <!-- MARKDOWN LINKS & IMAGES -->
