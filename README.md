@@ -60,7 +60,7 @@
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
-	<li><a href="#citation">Cite this project</a></li>
+	<li><a href="#cite this project">Cite this project</a></li>
     <li><a href="#acknowledgements">Acknowledgements</a></li>
   </ol>
 </details>
@@ -160,14 +160,21 @@ Project Link: [CLOUD](https://github.com/JoseAAManzano/CLOUD/)
 <!-- CITATION -->
 ## Cite this project
 
+**APA**
+Aguasvivas, J. A., Testolin, A., Zorzi, M., & Carreiras, M. (2021, August 3). Words in the CLOUD: How orthographic similarity and bilingual experience facilitate foreign vocabulary learning. https://doi.org/10.31234/osf.io/8tx7p
 
+**MLA**
+Aguasvivas, Jose A., et al. “Words in the CLOUD: How Orthographic Similarity and Bilingual Experience Facilitate Foreign Vocabulary Learning.” PsyArXiv, 3 Aug. 2021. Web.
+
+**Chicago**
+Aguasvivas, Jose A., Alberto Testolin, Marco Zorzi, and Manuel Carreiras. 2021. “Words in the CLOUD: How Orthographic Similarity and Bilingual Experience Facilitate Foreign Vocabulary Learning.” PsyArXiv. August 3. doi:10.31234/osf.io/8tx7p.
 
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
 * [Best README-Template](https://github.com/othneildrew/Best-README-Template)
 * [Img Shields](https://shields.io)
 * [Choose an Open Source License](https://choosealicense.com)
-* [EMBO Short-Term Fellowship] (https://www.embo.org/funding/)
+* [EMBO Short-Term Fellowship](https://www.embo.org/funding/)
 
 
 
