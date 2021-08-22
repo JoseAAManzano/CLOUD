@@ -30,10 +30,10 @@
     <img src="images/logo.png" alt="Logo" width="120" height="80">
   </a>
 
-  <h3 align="center">CLOUD Model</h3>
+  <h3 align="center">Constrained Learner of Orthography: Unified, Distributed, and Dynamic</h3>
 
   <p align="center">
-    Constrained Learner of Orthography: Unified, Distributed, and Dynamic
+    <a href="https://psyarxiv.com/8tx7p/"><strong>PsyArXiv Preprint »</strong></a>
   </p>
 </p>
 
@@ -59,8 +59,8 @@
     <li><a href="#usage">Usage</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
-	<li><a href="#license">Citation</a></li>
     <li><a href="#contact">Contact</a></li>
+	<li><a href="#citation">Cite this project</a></li>
     <li><a href="#acknowledgements">Acknowledgements</a></li>
   </ol>
 </details>
