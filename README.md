@@ -15,13 +15,9 @@
 *** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
 [![Issues][issues-shield]][issues-url]
 [![License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-
+[![Forks][forks-shield]][forks-url]
 
 <!-- PROJECT LOGO -->
 <br />
@@ -165,7 +161,7 @@ Aguasvivas, Jose A., Alberto Testolin, Marco Zorzi, and Manuel Carreiras. 2021. 
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 [contributors-shield]: https://img.shields.io/github/contributors/othneildrew/Best-README-Template.svg?style=for-the-badge
 [contributors-url]: https://github.com/JoseAAManzano/CLOUD/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/JoseAAManzano/CLOUD?style=social
 [forks-url]: https://github.com/JoseAAManzano/CLOUDnetwork/members
 [issues-shield]: https://img.shields.io/github/issues/JoseAAManzano/CLOUD
 [issues-url]: https://github.com/JoseAAManzano/CLOUD/issues
