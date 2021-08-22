@@ -139,6 +139,8 @@ Project Link: [CLOUD](https://github.com/JoseAAManzano/CLOUD/)
 <!-- CITATION -->
 ## Cite this project
 
+Our paper is currently under review. We will update the citations accordingly once it is accepted for publication. However, if you decide to cite this work before it is published, please use the following:
+
 **APA**
 
 Aguasvivas, J. A., Testolin, A., Zorzi, M., & Carreiras, M. (2021, August 3). Words in the CLOUD: How orthographic similarity and bilingual experience facilitate foreign vocabulary learning. https://doi.org/10.31234/osf.io/8tx7p
