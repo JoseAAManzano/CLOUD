@@ -23,7 +23,7 @@
 <br />
 <p align="center">
   <a href="https://github.com/JoseAAManzano/CLOUD">
-    <img src="images/logo.png" alt="Logo" width="120" height="80">
+    <img src="images/logo.png" alt="Logo" width="140" height="100">
   </a>
 
   <h3 align="center">Constrained Learner of Orthography: Unified, Distributed, and Dynamic</h3>
